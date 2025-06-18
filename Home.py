@@ -3,7 +3,6 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-import pickle
 import kagglehub
 
 from sklearn.preprocessing import StandardScaler
@@ -11,17 +10,6 @@ from sklearn.ensemble import IsolationForest
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, davies_bouldin_score
-
-#section = st.sidebar.radio("Selecione uma etapa da análise:", (
-    #"1. Visão Geral dos Dados",
-    #"2. Análise Univariada",
-    #"3. Correlação entre Variáveis",
-    #"4. Detecção de Outliers",
-    #"5. Pré-processamento",
-    #"6. Redução de Dimensionalidade",
-    #"7. Clusterização",
-    #"8. Avaliação dos Clusters"
-#))
 
 @st.cache_data
 def load_data():
@@ -322,15 +310,32 @@ def pagina_5_preprocessamento(df):
     st.markdown("""
     O pré-processamento é uma etapa fundamental na preparação de dados para modelos de Machine Learning. Aqui, transformaremos nossas features para que os algoritmos possam interpretá-las da melhor forma possível.
     
-    Vamos abordar duas etapas principais:
-    1.  **Feature Scaling**: Padronizar as escalas das nossas variáveis numéricas.
-    2.  **One-Hot Encoding**: Converter variáveis categóricas (como gênero musical) em um formato numérico que os modelos entendam.
+    Vamos abordar três etapas principais:
+    1.  **Imputação de Dados**: Substituir valores ausentes.
+    2.  **Feature Scaling**: Padronizar as escalas das nossas variáveis numéricas.
+    3.  **One-Hot Encoding**: Converter variáveis categóricas em um formato numérico.
     """)
 
     df_processed = df.copy()
 
     st.markdown("---")
-    st.markdown("### 1. Feature Scaling (Padronização)")
+    st.markdown("### 1. Tratamento de Valores Ausentes")
+    st.markdown("""
+    Antes de escalar os dados, precisamos lidar com valores ausentes (NaN). Uma estratégia comum e robusta é a **imputação pela mediana**, onde substituímos os valores ausentes pelo valor central da coluna. Isso é menos sensível a outliers do que usar a média.
+    """)
+    
+    # Preencher NaNs com a mediana das colunas numéricas
+    numeric_cols_with_na = df_processed[num_features].columns[df_processed[num_features].isnull().any()].tolist()
+    if numeric_cols_with_na:
+        st.write("Valores ausentes encontrados nas seguintes colunas e preenchidos com a mediana:")
+        st.write(df_processed[numeric_cols_with_na].isnull().sum().to_frame(name='NAs Preenchidos'))
+        df_processed.fillna(df_processed.median(numeric_only=True), inplace=True)
+    else:
+        st.success("Nenhum valor ausente encontrado nas colunas numéricas. ✅")
+    
+
+    st.markdown("---")
+    st.markdown("### 2. Feature Scaling (Padronização)")
     st.markdown("""
     Algoritmos de clusterização, como o K-Means, são sensíveis à escala das features. Variáveis com escalas maiores (como `duration_ms`) podem dominar o processo de agrupamento.
     Usaremos o **StandardScaler**, que transforma os dados para que tenham média 0 e desvio padrão 1.
@@ -362,7 +367,7 @@ def pagina_5_preprocessamento(df):
             st.pyplot(fig)
     
     st.markdown("---")
-    st.markdown("### 2. One-Hot Encoding para Gêneros")
+    st.markdown("### 3. One-Hot Encoding para Gêneros")
     st.markdown("""
     Para usar a feature `track_genre` em nosso modelo, precisamos convertê-la de texto para um formato numérico. O **One-Hot Encoding** cria novas colunas para cada gênero, marcando com `1` se a música pertence àquele gênero e `0` caso contrário.
     """)
@@ -395,15 +400,215 @@ def pagina_5_preprocessamento(df):
         st.session_state['processed_df'] = final_df
         st.success("DataFrame processado salvo na sessão! ✅")
 
+def pagina_6_reducao_dimensionalidade(df):
+    st.subheader("📉 6. Redução de Dimensionalidade")
+    st.markdown("""
+    Com um grande número de features, pode ser difícil visualizar e modelar os dados. A **Redução de Dimensionalidade** nos ajuda a "comprimir" as informações mais importantes em um número menor de componentes.
+    
+    Usaremos a **Análise de Componentes Principais (PCA)**, uma técnica popular que encontra novas eixos (componentes) que maximizam a variância nos dados.
+    """)
+    
+    if 'processed_df' not in st.session_state or st.session_state['processed_df'] is None:
+        st.warning("Por favor, execute o pré-processamento na página '5. Pré-processamento' e clique em 'Salvar DataFrame' antes de continuar.")
+        return
+
+    processed_df = st.session_state['processed_df']
+    
+    st.markdown("### ⚙️ Configurando o PCA")
+    n_components = st.slider(
+        "Número de componentes principais para gerar:",
+        min_value=2, max_value=20, value=10,
+        help="Escolha quantos componentes (novas features) você deseja criar. Começar com 10 a 15 é geralmente um bom ponto de partida."
+    )
+    
+    pca = PCA(n_components=n_components)
+    X_pca = pca.fit_transform(processed_df)
+
+    st.markdown("### 📊 Variância Explicada")
+    st.markdown("O gráfico abaixo mostra quanta da variância original dos dados é 'capturada' por cada componente principal. O ideal é que os primeiros componentes capturem a maior parte da informação.")
+
+    explained_variance = pca.explained_variance_ratio_
+    cumulative_variance = np.cumsum(explained_variance)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(range(1, n_components + 1), explained_variance, alpha=0.6, color='b', label='Variância Individual')
+    ax.plot(range(1, n_components + 1), cumulative_variance, 'r-o', label='Variância Cumulativa')
+    ax.set_xlabel('Componentes Principais')
+    ax.set_ylabel('Proporção da Variância Explicada')
+    ax.set_title('Variância Explicada pelos Componentes Principais')
+    ax.legend(loc='best')
+    ax.set_xticks(range(1, n_components + 1))
+    st.pyplot(fig)
+
+    st.info(f"Com **{n_components}** componentes, conseguimos explicar **{cumulative_variance[-1]:.2%}** da variância total dos dados.")
+    
+    st.markdown("### 💿 Dados Transformados pelo PCA")
+    st.markdown("Abaixo está o nosso dataset transformado, agora com um número reduzido de dimensões. Estes serão os dados que usaremos para a clusterização.")
+    
+    df_pca = pd.DataFrame(X_pca, columns=[f'PC_{i+1}' for i in range(n_components)])
+    st.dataframe(df_pca.head())
+
+    if st.button("Salvar dados do PCA para próximas etapas"):
+        st.session_state['pca_df'] = df_pca
+        st.success("Dados transformados pelo PCA salvos na sessão! ✅")
+
+
+def pagina_7_clusterizacao(df):
+    st.subheader("🧩 7. Clusterização")
+    st.markdown("""
+    Agora que nossos dados estão preparados, vamos aplicar algoritmos de **clusterização** para encontrar grupos (clusters) de músicas com características semelhantes. O objetivo é descobrir "playlists" naturais escondidas nos dados.
+    """)
+
+    if 'pca_df' not in st.session_state or st.session_state['pca_df'] is None:
+        st.warning("Por favor, execute a Redução de Dimensionalidade na página '6. Redução de Dimensionalidade' e salve os dados antes de continuar.")
+        return
+    
+    X_data = st.session_state['pca_df']
+
+    st.markdown("### 🤖 Escolha do Algoritmo de Clusterização")
+    algo_choice = st.selectbox(
+        "Selecione o algoritmo:",
+        ["K-Means", "DBSCAN", "Clustering Aglomerativo"]
+    )
+
+    model = None
+    labels = None
+
+    if algo_choice == "K-Means":
+        st.markdown("""
+        **K-Means** é um dos algoritmos mais populares. Ele agrupa os dados tentando separar as amostras em *k* grupos de variância igual, minimizando um critério conhecido como inércia. Você precisa definir o número de clusters (k) antecipadamente.
+        """)
+        k = st.slider("Número de clusters (k):", min_value=2, max_value=20, value=8)
+        model = KMeans(n_clusters=k, random_state=42, n_init=10)
+    
+    elif algo_choice == "DBSCAN":
+        st.markdown("""
+        **DBSCAN** (Density-Based Spatial Clustering of Applications with Noise) agrupa pontos que estão densamente compactados, marcando como outliers os pontos que estão sozinhos em regiões de baixa densidade. É ótimo para encontrar clusters de formas arbitrárias e não exige que você defina o número de clusters.
+        """)
+        eps = st.slider("Epsilon (eps - raio da vizinhança):", min_value=0.1, max_value=5.0, value=1.5, step=0.1)
+        min_samples = st.slider("Número Mínimo de Amostras (min_samples):", min_value=1, max_value=50, value=10)
+        model = DBSCAN(eps=eps, min_samples=min_samples)
+
+    elif algo_choice == "Clustering Aglomerativo":
+        st.markdown("""
+        O **Clustering Aglomerativo** realiza uma clusterização hierárquica. Ele começa tratando cada ponto como um cluster separado e, em seguida, mescla recursivamente os pares de clusters mais próximos até que um certo número de clusters seja alcançado.
+        """)
+        n_clusters_agg = st.slider("Número de clusters:", min_value=2, max_value=20, value=8)
+        model = AgglomerativeClustering(n_clusters=n_clusters_agg)
+
+    if st.button(f"Executar {algo_choice}"):
+        with st.spinner("Clusterizando os dados... Isso pode levar um momento."):
+            labels = model.fit_predict(X_data)
+            st.session_state['cluster_labels'] = labels
+            st.session_state['cluster_data'] = X_data
+            st.success(f"Clusterização com {algo_choice} concluída! Os resultados foram salvos.")
+            
+            n_clusters_found = len(set(labels)) - (1 if -1 in labels else 0)
+            st.write(f"Número de clusters encontrados: **{n_clusters_found}**")
+            if -1 in labels:
+                noise_points = np.sum(labels == -1)
+                st.write(f"Número de pontos de ruído (outliers): **{noise_points}**")
+
+def pagina_8_avaliacao_clusters(df):
+    st.subheader("🏆 8. Avaliação dos Clusters")
+    st.markdown("""
+    Como saber se os clusters que encontramos são bons? Nesta etapa, vamos usar métricas quantitativas e visualizações para avaliar a qualidade dos nossos agrupamentos.
+    """)
+
+    if 'cluster_labels' not in st.session_state or st.session_state['cluster_labels'] is None or \
+       'cluster_data' not in st.session_state or st.session_state['cluster_data'] is None:
+        st.warning("Por favor, execute a Clusterização na página '7. Clusterização' antes de continuar.")
+        return
+        
+    labels = st.session_state['cluster_labels']
+    data = st.session_state['cluster_data']
+    
+    # Filtrar pontos de ruído (comuns no DBSCAN) para as métricas
+    if -1 in labels:
+        mask = labels != -1
+        filtered_data = data[mask]
+        filtered_labels = labels[mask]
+    else:
+        filtered_data = data
+        filtered_labels = labels
+
+    if len(set(filtered_labels)) < 2:
+        st.error("A avaliação requer pelo menos 2 clusters (excluindo ruído). O algoritmo pode não ter encontrado grupos significativos com os parâmetros atuais.")
+        return
+
+    st.markdown("### 📈 Métricas de Avaliação")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(
+            label="Silhouette Score",
+            value=f"{silhouette_score(filtered_data, filtered_labels):.3f}",
+            help="Mede o quão semelhante um objeto é ao seu próprio cluster em comparação com outros clusters. Varia de -1 a 1. Valores mais altos são melhores."
+        )
+    with col2:
+        st.metric(
+            label="Davies-Bouldin Index",
+            value=f"{davies_bouldin_score(filtered_data, filtered_labels):.3f}",
+            help="Mede a semelhança média entre clusters. Valores mais baixos são melhores, indicando que os clusters estão bem separados."
+        )
+
+    st.markdown("---")
+    st.markdown("### 🎨 Visualização dos Clusters")
+    st.markdown("Aqui podemos ver os clusters plotados nos dois primeiros componentes principais. Cada cor representa um cluster diferente.")
+    
+    # Adicionar os labels ao dataframe de PCA para visualização
+    df_plot = data.copy()
+    df_plot['cluster'] = labels
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.scatterplot(
+        data=df_plot,
+        x='PC_1',
+        y='PC_2',
+        hue='cluster',
+        palette=sns.color_palette("hsv", n_colors=len(set(labels))),
+        legend='full',
+        alpha=0.7,
+        ax=ax
+    )
+    ax.set_title("Clusters Visualizados em 2D")
+    st.pyplot(fig)
+
+    st.markdown("### 🎶 Explorar Clusters")
+    st.markdown("Selecione um cluster para ver algumas das músicas que pertencem a ele.")
+
+    cluster_id = st.selectbox("Selecione um Cluster ID:", sorted(set(labels)))
+    
+    # Adicionar os labels ao dataframe original para análise
+    df_original_with_clusters = df.iloc[data.index].copy()
+    df_original_with_clusters['cluster'] = labels
+    
+    musicas_no_cluster = df_original_with_clusters[df_original_with_clusters['cluster'] == cluster_id]
+    st.write(f"Mostrando as primeiras 15 músicas do Cluster {cluster_id}:")
+    st.dataframe(musicas_no_cluster[['track_name', 'artists', 'track_genre', 'popularity']])
+
 
 paginas = {
     "1. Visão Geral dos Dados": pagina_1_visao_geral,
     "2. Análise Univariada": pagina_2_analise_univariada,
     "3. Correlação entre Variáveis": pagina_3_correlacao,
     "4. Detecção de Outliers": pagina_4_outliers,
-    "5. Pré-processamento": pagina_5_preprocessamento
+    "5. Pré-processamento": pagina_5_preprocessamento,
+    "6. Redução de Dimensionalidade": pagina_6_reducao_dimensionalidade,
+    "7. Clusterização": pagina_7_clusterizacao,
+    "8. Avaliação dos Clusters": pagina_8_avaliacao_clusters
 }
 
 st.sidebar.title("📊 EDA TuneTAP")
 escolha = st.sidebar.radio("Escolha uma etapa da análise:", list(paginas.keys()))
+
+# Inicializar st.session_state se não existir
+if 'processed_df' not in st.session_state:
+    st.session_state['processed_df'] = None
+if 'pca_df' not in st.session_state:
+    st.session_state['pca_df'] = None
+if 'cluster_labels' not in st.session_state:
+    st.session_state['cluster_labels'] = None
+if 'cluster_data' not in st.session_state:
+    st.session_state['cluster_data'] = None
+
 paginas[escolha](df)

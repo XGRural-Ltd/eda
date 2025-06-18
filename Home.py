@@ -18,19 +18,20 @@ path_dataset = path + '/dataset.csv'
 df=pd.read_csv(path_dataset, index_col=0)
 
 # Sidebar - Seleção de seções
-section = st.sidebar.radio("Selecione uma etapa da análise:", (
-    "1. Visão Geral dos Dados",
-    "2. Análise Univariada",
-    "3. Correlação entre Variáveis",
-    "4. Detecção de Outliers",
+#section = st.sidebar.radio("Selecione uma etapa da análise:", (
+   # "1. Visão Geral dos Dados",
+    #"2. Análise Univariada",
+   # "3. Correlação entre Variáveis",
+   # "4. Detecção de Outliers",
     #"5. Pré-processamento",
     #"6. Redução de Dimensionalidade",
     #"7. Clusterização",
     #"8. Avaliação dos Clusters"
-))
+#))
 num_features = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
 
-if section == "1. Visão Geral dos Dados":
+
+def pagina_1_visao_geral(df):
     st.subheader("📊 Informações Gerais do Dataset")
     st.write("Nesta etapa vamos ficar mais familiarizados com os dados. Vamos explorar as colunas, tipos de dados, valores ausentes, estatísticas descritivas e visualizar alguns plots.")
 
@@ -107,16 +108,34 @@ if section == "1. Visão Geral dos Dados":
 
     st.markdown("---")
     st.subheader("📈 Gráficos de Dispersão entre Variáveis Numéricas")
-    if len(num_cols) >= 2:
-        x_axis = st.selectbox("Variável no eixo X:", num_cols, index=0)
-        y_axis = st.selectbox("Variável no eixo Y:", num_cols, index=1)
-        fig, ax = plt.subplots()
-        sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, ax=ax)
-        ax.set_title(f"{y_axis} vs {x_axis}")
-        st.pyplot(fig)
+    x_axis = st.selectbox("Variável no eixo X:", num_features, index=0)
+    y_axis = st.selectbox("Variável no eixo Y:", num_features, index=1)
+    show_trend = st.checkbox("Mostrar linha de tendência (regressão linear)")
+    
 
+    df_plot = df[[x_axis, y_axis]].dropna()
 
-elif section == "2. Análise Univariada":
+    fig, ax = plt.subplots()
+    if show_trend:
+        sns.regplot(data=df_plot, x=x_axis, y=y_axis, ax=ax,
+                    scatter_kws={'alpha': 0.5, 'color': 'red'},
+                    line_kws={"color": "blue"})
+    else:
+        sns.scatterplot(data=df_plot, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
+
+    ax.set_title(f"Dispersão entre {x_axis} e {y_axis}")
+    st.pyplot(fig)
+    st.markdown("📌 Danceability vs. Energy")
+    st.markdown("- Já esperamnos uma correlação positiva entre 'danceability' e 'energy', pois músicas mais dançantes tendem a ter mais energia.  \n"
+                "- A linha de tendência (regressão linear) ajuda a visualizar uma correlação moderadamente positiva. \n"
+                "\n" 
+                "📌 Acousticness vs. Energy \n"
+                "- Correlação negativa forte esperada, pois músicas acústicas são menos energéticas \n"
+                "- A linha de tendência decrescemte indica uma relação inversamente proporcional. \n"
+                "\n"
+                "📌 Loudness vs. Energy \n"
+                "- Baixa dispersão e ascendência dos pontos mostram uma correlação fortemente positiva (músicas energéticas costumam ser mais altas) \n")
+def pagina_2_analise_univariada(df):
     st.subheader("📈 Análise Univariada Detalhada")
 
     st.markdown("Selecione uma ou mais variáveis para análise:")
@@ -165,7 +184,7 @@ elif section == "2. Análise Univariada":
         outliers = df[(data < lower_bound) | (data > upper_bound)][['track_name', var]]
         st.dataframe(outliers.head(10))
 
-elif section == "3. Correlação entre Variáveis":
+def pagina_3_correlacao(df):
     st.subheader("📊 Matriz de Correlação")
     corr_method = st.selectbox("Método de correlação:", ["pearson", "spearman", "kendall"])
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -173,7 +192,7 @@ elif section == "3. Correlação entre Variáveis":
     ax.set_title(f"Correlação - método: {corr_method}")
     st.pyplot(fig)
 
-elif section == "4. Detecção de Outliers":
+def pagina_4_outliers(df):
     st.subheader("🚨 Detecção de Outliers com Isolation Forest")
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(df[num_features])
@@ -194,3 +213,17 @@ elif section == "4. Detecção de Outliers":
     ax.scatter(X_pca[:, 0], X_pca[:, 1], c=(df['anomaly'] == -1), cmap='coolwarm', alpha=0.6)
     ax.set_title("Outliers detectados via PCA")
     st.pyplot(fig)
+
+paginas = {
+    "1. Visão Geral dos Dados": pagina_1_visao_geral,
+    "2. Análise Univariada": pagina_2_analise_univariada,
+    "3. Correlação entre Variáveis": pagina_3_correlacao,
+    "4. Detecção de Outliers": pagina_4_outliers,
+    # ...
+}
+
+st.sidebar.title("📊 EDA TuneTAP")
+escolha = st.sidebar.radio("Escolha uma etapa da análise:", list(paginas.keys()))
+paginas[escolha](df)  # Executa a função da página selecionada
+
+

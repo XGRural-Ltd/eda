@@ -12,6 +12,17 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 
+#section = st.sidebar.radio("Selecione uma etapa da análise:", (
+    #"1. Visão Geral dos Dados",
+    #"2. Análise Univariada",
+    #"3. Correlação entre Variáveis",
+    #"4. Detecção de Outliers",
+    #"5. Pré-processamento",
+    #"6. Redução de Dimensionalidade",
+    #"7. Clusterização",
+    #"8. Avaliação dos Clusters"
+#))
+
 @st.cache_data
 def load_data():
     path = kagglehub.dataset_download("maharshipandya/-spotify-tracks-dataset")
@@ -151,7 +162,7 @@ def pagina_2_analise_univariada(df):
     selected_var = st.selectbox("Selecione uma variável numérica para análise:", num_features)
 
     num_bins = st.slider("Número de Bins para o Histograma:", min_value=10, max_value=100, value=30)
-
+    
     st.markdown(f"---\n### 🎯 Análise da variável: `{selected_var}`")
 
     st.markdown("**📊 Visualização da Distribuição:**")
@@ -241,6 +252,13 @@ def pagina_3_correlacao(df):
 
 def pagina_4_outliers(df):
     st.subheader("🚨 Detecção de Outliers com Isolation Forest")
+    st.markdown("""
+    Nesta seção, vamos identificar **outliers**: músicas que possuem características muito diferentes da maioria. Um outlier pode ser uma música experimental, um erro nos dados ou simplesmente uma faixa única.
+    
+    Usaremos o algoritmo **Isolation Forest**, que é eficiente em detectar anomalias em dados multidimensionais. Ele funciona isolando observações ao selecionar aleatoriamente uma feature e, em seguida, um valor de divisão aleatório entre os valores máximo e mínimo da feature selecionada.
+    """)
+
+    st.markdown("### ⚙️ Controles da Detecção")
     features_for_outliers = st.multiselect(
         "Selecione as features para a detecção de outliers:", 
         num_features, 
@@ -251,24 +269,37 @@ def pagina_4_outliers(df):
         st.warning("Por favor, selecione ao menos uma feature para a análise.")
         return
 
+    contamination = st.slider(
+        "Taxa de contaminação (proporção de outliers):", 
+        0.01, 0.2, 0.05, step=0.01,
+        help="Este valor representa a proporção esperada de outliers no dataset. Um valor maior resultará em mais músicas sendo classificadas como anomalias."
+    )
+
+    st.markdown("---")
+    st.markdown("### 🎼 Músicas Anômalas Detectadas")
+
+    df_outlier_analysis = df.copy()
+
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(df[features_for_outliers])
+    X_scaled = scaler.fit_transform(df_outlier_analysis[features_for_outliers])
 
-    contamination = st.slider("Taxa de contaminação (proporção de outliers):", 0.01, 0.2, 0.05, step=0.01)
     iso = IsolationForest(contamination=contamination, random_state=42)
-    df['anomaly'] = iso.fit_predict(X_scaled)
-    outliers = df[df['anomaly'] == -1]
+    df_outlier_analysis['anomaly'] = iso.fit_predict(X_scaled)
+    outliers = df_outlier_analysis[df_outlier_analysis['anomaly'] == -1]
 
-    st.write(f"Outliers detectados: {len(outliers)} músicas")
+    st.write(f"Com base nas suas configurações, foram detectadas **{len(outliers)}** músicas como outliers.")
     st.dataframe(outliers[['track_name', 'artists', 'track_genre'] + features_for_outliers])
 
     if len(features_for_outliers) >= 2:
         st.subheader("📍 Visualização de Outliers em 2D (usando PCA)")
+        st.markdown("""
+        Para visualizar os outliers em um gráfico 2D, reduzimos a dimensionalidade das features selecionadas usando **Análise de Componentes Principais (PCA)**. Os pontos em vermelho representam as músicas marcadas como outliers.
+        """)
         pca = PCA(n_components=2)
         X_pca = pca.fit_transform(X_scaled)
         
-        df_pca = pd.DataFrame(X_pca, columns=['PC1', 'PC2'], index=df.index)
-        df_pca['anomaly'] = df['anomaly']
+        df_pca = pd.DataFrame(X_pca, columns=['PC1', 'PC2'], index=df_outlier_analysis.index)
+        df_pca['anomaly'] = df_outlier_analysis['anomaly']
         
         fig, ax = plt.subplots(figsize=(10, 7))
         sns.scatterplot(
@@ -282,12 +313,95 @@ def pagina_4_outliers(df):
     else:
         st.info("Selecione 2 ou mais features para visualizar o gráfico de dispersão com PCA.")
 
+@st.cache_data
+def convert_df_to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
+def pagina_5_preprocessamento(df):
+    st.subheader("⚙️ 5. Pré-processamento dos Dados")
+    st.markdown("""
+    O pré-processamento é uma etapa fundamental na preparação de dados para modelos de Machine Learning. Aqui, transformaremos nossas features para que os algoritmos possam interpretá-las da melhor forma possível.
+    
+    Vamos abordar duas etapas principais:
+    1.  **Feature Scaling**: Padronizar as escalas das nossas variáveis numéricas.
+    2.  **One-Hot Encoding**: Converter variáveis categóricas (como gênero musical) em um formato numérico que os modelos entendam.
+    """)
+
+    df_processed = df.copy()
+
+    st.markdown("---")
+    st.markdown("### 1. Feature Scaling (Padronização)")
+    st.markdown("""
+    Algoritmos de clusterização, como o K-Means, são sensíveis à escala das features. Variáveis com escalas maiores (como `duration_ms`) podem dominar o processo de agrupamento.
+    Usaremos o **StandardScaler**, que transforma os dados para que tenham média 0 e desvio padrão 1.
+    """)
+
+    features_to_scale = st.multiselect(
+        "Selecione as features numéricas para padronizar:",
+        options=num_features,
+        default=num_features
+    )
+    
+    if features_to_scale:
+        scaler = StandardScaler()
+        df_processed[features_to_scale] = scaler.fit_transform(df_processed[features_to_scale])
+
+        st.markdown("**Comparação: Antes vs. Depois da Padronização** (para a feature `danceability`)")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("Antes:")
+            fig, ax = plt.subplots(figsize=(6,4))
+            sns.histplot(df['danceability'], kde=True, ax=ax, color='blue')
+            ax.set_title("Original")
+            st.pyplot(fig)
+        with col2:
+            st.write("Depois:")
+            fig, ax = plt.subplots(figsize=(6,4))
+            sns.histplot(df_processed['danceability'], kde=True, ax=ax, color='green')
+            ax.set_title("Padronizado")
+            st.pyplot(fig)
+    
+    st.markdown("---")
+    st.markdown("### 2. One-Hot Encoding para Gêneros")
+    st.markdown("""
+    Para usar a feature `track_genre` em nosso modelo, precisamos convertê-la de texto para um formato numérico. O **One-Hot Encoding** cria novas colunas para cada gênero, marcando com `1` se a música pertence àquele gênero e `0` caso contrário.
+    """)
+    
+    if st.checkbox("Aplicar One-Hot Encoding na coluna 'track_genre'?", value=True):
+        df_processed = pd.get_dummies(df_processed, columns=['track_genre'], prefix='genre')
+        st.success(f"One-Hot Encoding aplicado! Novas colunas de gênero foram criadas.")
+    
+    st.markdown("---")
+    st.markdown("### 🏁 DataFrame Final Pré-processado")
+    st.markdown("Abaixo está uma amostra do nosso dataset após as transformações. Este é o conjunto de dados que usaremos para a clusterização.")
+    
+    final_features = df_processed.select_dtypes(include=np.number).columns.tolist()
+    final_df = df_processed[final_features]
+
+    st.dataframe(final_df.head())
+    st.write(f"O dataset final possui **{final_df.shape[0]}** linhas e **{final_df.shape[1]}** features.")
+
+    st.markdown("### 💾 Baixar Dados Processados")
+    st.markdown("Clique no botão para baixar o DataFrame processado em um arquivo CSV para uso posterior.")
+    
+    csv = convert_df_to_csv(final_df)
+    st.download_button(
+       label="Baixar dados como CSV",
+       data=csv,
+       file_name='processed_spotify_data.csv',
+       mime='text/csv',
+    )
+    if st.button("Salvar DataFrame em cache para próximas etapas"):
+        st.session_state['processed_df'] = final_df
+        st.success("DataFrame processado salvo na sessão! ✅")
+
+
 paginas = {
     "1. Visão Geral dos Dados": pagina_1_visao_geral,
     "2. Análise Univariada": pagina_2_analise_univariada,
     "3. Correlação entre Variáveis": pagina_3_correlacao,
     "4. Detecção de Outliers": pagina_4_outliers,
-    # ...
+    "5. Pré-processamento": pagina_5_preprocessamento
 }
 
 st.sidebar.title("📊 EDA TuneTAP")

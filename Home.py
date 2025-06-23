@@ -11,6 +11,27 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 
+cols_dict = {'track_id' : 'Track ID',
+             'artists' : 'Artists',
+             'album_name' : 'Album Name',
+             'track_name' : 'Track Name',
+             'popularity' : 'Popularity',
+             'duration_ms' : 'Duration (ms)',
+             'explicit' : 'Explicit',
+             'danceability' : 'Danceability',
+             'energy' : 'Energy',
+             'key' : 'Key',
+             'loudness' : 'Loudness',
+             'mode' : 'Mode',
+             'speechiness' : 'Speechiness',
+             'acousticness' : 'Acousticness',
+             'instrumentalness' : 'Instrumentalness',
+             'liveness' : 'Liveness',
+             'valence' : 'Valence',
+             'tempo' : 'Tempo',
+             'time_signature' : 'Time Signature',
+             'track_genre' : 'Track Genre'}
+
 @st.cache_data
 def load_data():
     path = kagglehub.dataset_download("maharshipandya/-spotify-tracks-dataset")
@@ -24,7 +45,6 @@ df = load_data()
 
 num_features = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
 
-
 def pagina_1_visao_geral(df):
     st.subheader("📊 Informações Gerais do Dataset")
     st.write("Nesta etapa vamos ficar mais familiarizados com os dados. Vamos explorar as colunas, tipos de dados, valores ausentes, estatísticas descritivas e visualizar alguns plots.")
@@ -34,20 +54,13 @@ def pagina_1_visao_geral(df):
 
     st.markdown("**Visualize o DataFrame com as colunas selecionadas:**")
     cols = st.multiselect("Colunas para exibir:", df.columns.tolist(), default=df.columns[:6].tolist())
-    st.dataframe(df[cols].head(15))
-
-    
-    st.markdown("**Tipos de dados e valores ausentes:**")
-    if st.checkbox("Mostrar dtypes e valores nulos"):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(df.dtypes.astype(str))
-        with col2:
-            st.write(df.isnull().sum())
+    st.dataframe(df[cols].head(15), hide_index=True)
 
     st.markdown("**Estatísticas descritivas:**")
-    if st.checkbox("Exibir estatísticas descritivas"):
-        st.write(df.describe())
+    desc = df.describe().rename(columns=cols_dict).T
+    desc = desc.drop(columns=['count'])
+    desc = desc.map(lambda x: f"{x:.2f}" if isinstance(x, (int, float, np.floating)) else x)
+    st.table(desc)
 
     st.markdown("---")
     st.subheader("🧾 Dicionário de Dados: Descrição das Colunas")
@@ -86,38 +99,62 @@ def pagina_1_visao_geral(df):
     st.subheader("📈 Visualizações Gerais de Distribuição")
 
     selected_col = st.selectbox("Selecione uma coluna numérica:", num_cols)
+    selected_col_name = cols_dict.get(selected_col)
     plot_type = st.radio("Tipo de gráfico:", ["Histograma", "Boxplot", "Ambos"])
+    if plot_type == "Ambos":
+        # Show histogram
+        fig_hist, ax_hist = plt.subplots(figsize=(7, 4))
+        sns.histplot(df[selected_col], kde=True, ax=ax_hist, color='skyblue')
+        ax_hist.set_xlabel(selected_col_name)
+        ax_hist.set_ylabel("Frequência")
+        ax_hist.set_title(f"Histograma de {selected_col_name}")
+        st.pyplot(fig_hist)
 
-    fig, axs = plt.subplots(1, 2 if plot_type == "Ambos" else 1, figsize=(14, 4))
-    if plot_type == "Histograma" or plot_type == "Ambos":
-        ax = axs[0] if plot_type == "Ambos" else axs
-        sns.histplot(df[selected_col], kde=True, ax=ax, color='skyblue')
-        ax.set_title(f"Histograma de {selected_col}")
-    if plot_type == "Boxplot" or plot_type == "Ambos":
-        ax = axs[1] if plot_type == "Ambos" else axs
-        sns.boxplot(x=df[selected_col], ax=ax, color='salmon')
-        ax.set_title(f"Boxplot de {selected_col}")
-    st.pyplot(fig)
+        # Show boxplot
+        fig_box, ax_box = plt.subplots(figsize=(7, 4))
+        sns.boxplot(x=df[selected_col], ax=ax_box, color='salmon')
+        ax_box.set_xlabel(selected_col_name)
+        ax_box.set_ylabel("Valor")
+        ax_box.set_title(f"Boxplot de {selected_col_name}")
+        st.pyplot(fig_box)
+    else:
+        fig, ax = plt.subplots(figsize=(7, 4))
+        if plot_type == "Histograma":
+            sns.histplot(df[selected_col], kde=True, ax=ax, color='skyblue')
+            ax.set_xlabel(selected_col_name)
+            ax.set_ylabel("Frequência")
+            ax.set_title(f"Histograma de {selected_col_name}")
+        else:
+            sns.boxplot(x=df[selected_col], ax=ax, color='salmon')
+            ax.set_xlabel(selected_col_name)
+            ax.set_ylabel("Valor")
+            ax.set_title(f"Boxplot de {selected_col_name}")
+        st.pyplot(fig)
 
     st.markdown("---")
     st.subheader("📈 Gráficos de Dispersão entre Variáveis Numéricas")
     x_axis = st.selectbox("Variável no eixo X:", num_features, index=0)
     y_axis = st.selectbox("Variável no eixo Y:", num_features, index=1)
+    x_axis_name = cols_dict.get(x_axis)
+    y_axis_name = cols_dict.get(y_axis)
     show_trend = st.checkbox("Mostrar linha de tendência (regressão linear)")
-    
-
-    df_plot = df[[x_axis, y_axis]].dropna()
-
     fig, ax = plt.subplots()
-    if show_trend:
-        sns.regplot(data=df_plot, x=x_axis, y=y_axis, ax=ax,
-                    scatter_kws={'alpha': 0.5, 'color': 'red'},
-                    line_kws={"color": "blue"})
+    if x_axis == y_axis:
+        # Plot a scatter of the variable against itself (diagonal line)
+        sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
+        ax.plot(df[x_axis], df[y_axis], color='blue', linewidth=1, alpha=0.5)
     else:
-        sns.scatterplot(data=df_plot, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
-
-    ax.set_title(f"Dispersão entre {x_axis} e {y_axis}")
+        if show_trend:
+            sns.regplot(data=df, x=x_axis, y=y_axis, ax=ax,
+                        scatter_kws={'alpha': 0.5, 'color': 'red'},
+                        line_kws={"color": "blue"})
+        else:
+            sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
+    ax.set_xlabel(x_axis_name)
+    ax.set_ylabel(y_axis_name)
+    ax.set_title(f"Dispersão entre {x_axis_name} e {y_axis_name}")
     st.pyplot(fig)
+
     st.markdown("📌 Danceability vs. Energy")
     st.markdown("- Já esperamnos uma correlação positiva entre 'danceability' e 'energy', pois músicas mais dançantes tendem a ter mais energia.  \n"
                 "- A linha de tendência (regressão linear) ajuda a visualizar uma correlação moderadamente positiva. \n"
@@ -128,6 +165,7 @@ def pagina_1_visao_geral(df):
                 "\n"
                 "📌 Loudness vs. Energy \n"
                 "- Baixa dispersão e ascendência dos pontos mostram uma correlação fortemente positiva (músicas energéticas costumam ser mais altas) \n")
+
 
 def pagina_2_analise_univariada(df):
     st.subheader("🔬 Análise Univariada Detalhada")

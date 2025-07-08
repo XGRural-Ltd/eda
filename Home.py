@@ -9,7 +9,28 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.metrics import silhouette_score, davies_bouldin_score, silhouette_samples
+
+cols_dict = {'track_id' : 'Track ID',
+             'artists' : 'Artists',
+             'album_name' : 'Album Name',
+             'track_name' : 'Track Name',
+             'popularity' : 'Popularity',
+             'duration_ms' : 'Duration (ms)',
+             'explicit' : 'Explicit',
+             'danceability' : 'Danceability',
+             'energy' : 'Energy',
+             'key' : 'Key',
+             'loudness' : 'Loudness',
+             'mode' : 'Mode',
+             'speechiness' : 'Speechiness',
+             'acousticness' : 'Acousticness',
+             'instrumentalness' : 'Instrumentalness',
+             'liveness' : 'Liveness',
+             'valence' : 'Valence',
+             'tempo' : 'Tempo',
+             'time_signature' : 'Time Signature',
+             'track_genre' : 'Track Genre'}
 
 @st.cache_data
 def load_data():
@@ -24,7 +45,6 @@ df = load_data()
 
 num_features = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
 
-
 def pagina_1_visao_geral(df):
     st.subheader("📊 Informações Gerais do Dataset")
     st.write("Nesta etapa vamos ficar mais familiarizados com os dados. Vamos explorar as colunas, tipos de dados, valores ausentes, estatísticas descritivas e visualizar alguns plots.")
@@ -34,20 +54,13 @@ def pagina_1_visao_geral(df):
 
     st.markdown("**Visualize o DataFrame com as colunas selecionadas:**")
     cols = st.multiselect("Colunas para exibir:", df.columns.tolist(), default=df.columns[:6].tolist())
-    st.dataframe(df[cols].head(15))
-
-    
-    st.markdown("**Tipos de dados e valores ausentes:**")
-    if st.checkbox("Mostrar dtypes e valores nulos"):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(df.dtypes.astype(str))
-        with col2:
-            st.write(df.isnull().sum())
+    st.dataframe(df[cols].head(15), hide_index=True)
 
     st.markdown("**Estatísticas descritivas:**")
-    if st.checkbox("Exibir estatísticas descritivas"):
-        st.write(df.describe())
+    desc = df.describe().rename(columns=cols_dict).T
+    desc = desc.drop(columns=['count'])
+    desc = desc.map(lambda x: f"{x:.2f}" if isinstance(x, (int, float, np.floating)) else x)
+    st.table(desc)
 
     st.markdown("---")
     st.subheader("🧾 Dicionário de Dados: Descrição das Colunas")
@@ -86,38 +99,62 @@ def pagina_1_visao_geral(df):
     st.subheader("📈 Visualizações Gerais de Distribuição")
 
     selected_col = st.selectbox("Selecione uma coluna numérica:", num_cols)
+    selected_col_name = cols_dict.get(selected_col)
     plot_type = st.radio("Tipo de gráfico:", ["Histograma", "Boxplot", "Ambos"])
+    if plot_type == "Ambos":
+        # Show histogram
+        fig_hist, ax_hist = plt.subplots(figsize=(7, 4))
+        sns.histplot(df[selected_col], kde=True, ax=ax_hist, color='skyblue')
+        ax_hist.set_xlabel(selected_col_name)
+        ax_hist.set_ylabel("Frequência")
+        ax_hist.set_title(f"Histograma de {selected_col_name}")
+        st.pyplot(fig_hist)
 
-    fig, axs = plt.subplots(1, 2 if plot_type == "Ambos" else 1, figsize=(14, 4))
-    if plot_type == "Histograma" or plot_type == "Ambos":
-        ax = axs[0] if plot_type == "Ambos" else axs
-        sns.histplot(df[selected_col], kde=True, ax=ax, color='skyblue')
-        ax.set_title(f"Histograma de {selected_col}")
-    if plot_type == "Boxplot" or plot_type == "Ambos":
-        ax = axs[1] if plot_type == "Ambos" else axs
-        sns.boxplot(x=df[selected_col], ax=ax, color='salmon')
-        ax.set_title(f"Boxplot de {selected_col}")
-    st.pyplot(fig)
+        # Show boxplot
+        fig_box, ax_box = plt.subplots(figsize=(7, 4))
+        sns.boxplot(x=df[selected_col], ax=ax_box, color='salmon')
+        ax_box.set_xlabel(selected_col_name)
+        ax_box.set_ylabel("Valor")
+        ax_box.set_title(f"Boxplot de {selected_col_name}")
+        st.pyplot(fig_box)
+    else:
+        fig, ax = plt.subplots(figsize=(7, 4))
+        if plot_type == "Histograma":
+            sns.histplot(df[selected_col], kde=True, ax=ax, color='skyblue')
+            ax.set_xlabel(selected_col_name)
+            ax.set_ylabel("Frequência")
+            ax.set_title(f"Histograma de {selected_col_name}")
+        else:
+            sns.boxplot(x=df[selected_col], ax=ax, color='salmon')
+            ax.set_xlabel(selected_col_name)
+            ax.set_ylabel("Valor")
+            ax.set_title(f"Boxplot de {selected_col_name}")
+        st.pyplot(fig)
 
     st.markdown("---")
     st.subheader("📈 Gráficos de Dispersão entre Variáveis Numéricas")
     x_axis = st.selectbox("Variável no eixo X:", num_features, index=0)
     y_axis = st.selectbox("Variável no eixo Y:", num_features, index=1)
+    x_axis_name = cols_dict.get(x_axis)
+    y_axis_name = cols_dict.get(y_axis)
     show_trend = st.checkbox("Mostrar linha de tendência (regressão linear)")
-    
-
-    df_plot = df[[x_axis, y_axis]].dropna()
-
     fig, ax = plt.subplots()
-    if show_trend:
-        sns.regplot(data=df_plot, x=x_axis, y=y_axis, ax=ax,
-                    scatter_kws={'alpha': 0.5, 'color': 'red'},
-                    line_kws={"color": "blue"})
+    if x_axis == y_axis:
+        # Plot a scatter of the variable against itself (diagonal line)
+        sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
+        ax.plot(df[x_axis], df[y_axis], color='blue', linewidth=1, alpha=0.5)
     else:
-        sns.scatterplot(data=df_plot, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
-
-    ax.set_title(f"Dispersão entre {x_axis} e {y_axis}")
+        if show_trend:
+            sns.regplot(data=df, x=x_axis, y=y_axis, ax=ax,
+                        scatter_kws={'alpha': 0.5, 'color': 'red'},
+                        line_kws={"color": "blue"})
+        else:
+            sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
+    ax.set_xlabel(x_axis_name)
+    ax.set_ylabel(y_axis_name)
+    ax.set_title(f"Dispersão entre {x_axis_name} e {y_axis_name}")
     st.pyplot(fig)
+
     st.markdown("📌 Danceability vs. Energy")
     st.markdown("- Já esperamnos uma correlação positiva entre 'danceability' e 'energy', pois músicas mais dançantes tendem a ter mais energia.  \n"
                 "- A linha de tendência (regressão linear) ajuda a visualizar uma correlação moderadamente positiva. \n"
@@ -129,15 +166,26 @@ def pagina_1_visao_geral(df):
                 "📌 Loudness vs. Energy \n"
                 "- Baixa dispersão e ascendência dos pontos mostram uma correlação fortemente positiva (músicas energéticas costumam ser mais altas) \n")
 
+
 def pagina_2_analise_univariada(df):
     st.subheader("🔬 Análise Univariada Detalhada")
     st.markdown("Explore a distribuição de cada variável. Use os filtros para comparar diferentes gêneros e ajuste os gráficos para uma análise mais profunda.")
 
     st.markdown("### 🎭 Comparar Distribuições por Gênero")
-    genres_to_compare = st.multiselect(
+    genres = sorted(df['track_genre'].unique().tolist())
+    genres_cap = [g.capitalize() for g in genres]
+    genre_map = dict(zip(genres_cap, genres))
+    genre_filter = st.text_input("Filtrar gêneros (digite parte do nome):", "")
+    filtered_genres = [g for g in genres_cap if genre_filter.lower() in g.lower()]
+    if not filtered_genres:
+        st.warning("Nenhum gênero encontrado com esse filtro.")
+        filtered_genres = genres_cap  # Mostra todos se filtro vazio
+
+    genres_to_compare_cap = st.multiselect(
         "Selecione um ou mais gêneros para comparar (opcional):",
-        sorted(df['track_genre'].unique().tolist())
+        filtered_genres
     )
+    genres_to_compare = [genre_map[g] for g in genres_to_compare_cap]
 
     if genres_to_compare:
         df_filtered = df[df['track_genre'].isin(genres_to_compare)]
@@ -148,6 +196,24 @@ def pagina_2_analise_univariada(df):
 
     st.markdown("### ⚙️ Controles da Análise")
     selected_var = st.selectbox("Selecione uma variável numérica para análise:", num_features)
+    col_descriptions = {
+        "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
+        "duration_ms": "Duração da faixa em milissegundos.",
+        "danceability": "Quão dançante é a faixa, de 0.0 (menos dançante) a 1.0 (mais dançante).",
+        "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
+        "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
+        "loudness": "Volume geral da faixa em decibéis (dB).",
+        "mode": "Modalidade: 1 = maior, 0 = menor.",
+        "speechiness": "Detecta presença de fala. 1.0 = fala pura; 0.0 = música pura.",
+        "acousticness": "Confiança de que a faixa é acústica (0.0 a 1.0).",
+        "instrumentalness": "Probabilidade de não conter vocais. Próximo de 1.0 = instrumental.",
+        "liveness": "Probabilidade de ter sido gravada ao vivo. Acima de 0.8 = performance ao vivo.",
+        "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
+        "tempo": "Tempo estimado da faixa (batidas por minuto).",
+        "time_signature": "Compasso estimado (de 3 a 7)."
+    }
+    if selected_var in col_descriptions:
+        st.info(f"**Descrição:** {col_descriptions[selected_var]}")
 
     num_bins = st.slider("Número de Bins para o Histograma:", min_value=10, max_value=100, value=30)
     
@@ -157,13 +223,19 @@ def pagina_2_analise_univariada(df):
     col1, col2 = st.columns(2)
     with col1:
         fig1, ax1 = plt.subplots()
-        sns.histplot(data=df_filtered, x=selected_var, hue=hue_on, kde=True, ax=ax1, bins=num_bins, palette='viridis')
+        if hue_on:
+            sns.histplot(data=df_filtered, x=selected_var, hue=hue_on, kde=True, ax=ax1, bins=num_bins, palette='viridis')
+        else:
+            sns.histplot(data=df_filtered, x=selected_var, kde=True, ax=ax1, bins=num_bins, color='skyblue')
         ax1.set_title(f"Distribuição de {selected_var}")
         st.pyplot(fig1)
 
     with col2:
-        fig2, ax2 = plt.subplots()
-        sns.boxplot(data=df_filtered, x=selected_var, y=hue_on, ax=ax2, palette='viridis', orient='h')
+        fig2, ax2 = plt.subplots(figsize=(7, 4))
+        if hue_on:
+            sns.boxplot(data=df_filtered, x=selected_var, y=hue_on, ax=ax2, palette='viridis', orient='h')
+        else:
+            sns.boxplot(data=df_filtered, x=selected_var, ax=ax2, color='skyblue', orient='h')
         ax2.set_title(f"Boxplot de {selected_var}")
         st.pyplot(fig2)
 
@@ -187,7 +259,14 @@ def pagina_2_analise_univariada(df):
             st.success("Não foram encontrados outliers com base no critério de 1.5 * IQR. ✨")
         else:
             st.write(f"Foram encontrados **{len(outliers)}** outliers:")
-            st.dataframe(outliers[['track_name', 'artists', 'track_genre', selected_var]].sort_values(by=selected_var, ascending=False))
+            cols_to_show = ['track_name', 'artists', 'track_genre', selected_var]
+            if st.checkbox("Mostrar todas as colunas dos outliers"):
+                st.dataframe(outliers)
+            else:
+                st.dataframe(outliers[cols_to_show].sort_values(by=selected_var, ascending=False))
+
+    if st.checkbox("Mostrar dicionário das variáveis numéricas"):
+        st.table(pd.DataFrame.from_dict(col_descriptions, orient='index', columns=['Descrição']))
 
 def pagina_3_correlacao(df):
     st.subheader("↔️ Análise de Correlação")
@@ -215,8 +294,8 @@ def pagina_3_correlacao(df):
         mask_threshold = np.abs(corr_matrix) < corr_threshold
         mask_heatmap = mask_upper | mask_threshold
         
-        fig, ax = plt.subplots(figsize=(12, 9))
-        sns.heatmap(corr_matrix, mask=mask_heatmap, annot=True, cmap='coolwarm', fmt=".2f", ax=ax, annot_kws={"size": 8}, vmin=-1, vmax=1)
+        fig, ax = plt.subplots(figsize=(14, 10))
+        sns.heatmap(corr_matrix, mask=mask_heatmap, annot=True, cmap='coolwarm', fmt=".2f", ax=ax, annot_kws={"size": 10}, vmin=-1, vmax=1, linewidths=0.5, linecolor='gray')
         ax.set_title(f"Mapa de Calor (Método: {corr_method.capitalize()}, Gênero: {corr_genre})", fontsize=16)
         st.pyplot(fig)
 
@@ -226,14 +305,16 @@ def pagina_3_correlacao(df):
         mask_table = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
         corr_unstacked = corr_matrix.where(mask_table).stack()
         
-        strong_pairs = corr_unstacked.sort_values(key=abs, ascending=False)
+        strong_pairs = corr_unstacked.sort_values(key=abs, ascending=False);
         
         strong_pairs = strong_pairs[abs(strong_pairs) > corr_threshold]
 
         if strong_pairs.empty:
             st.warning("Nenhum par encontrado acima do threshold. Tente um valor menor.")
         else:
-            st.dataframe(strong_pairs.to_frame(name='correlation_value').head(20))
+            df_corr_pairs = strong_pairs.reset_index()
+            df_corr_pairs.columns = ['Variável 1', 'Variável 2', 'Valor da Correlação']
+            st.dataframe(df_corr_pairs.head(20))
 
     else:
         st.warning(f"Não há dados suficientes para o gênero '{corr_genre}' para calcular a correlação.")
@@ -301,6 +382,8 @@ def pagina_4_outliers(df):
     else:
         st.info("Selecione 2 ou mais features para visualizar o gráfico de dispersão com PCA.")
 
+    st.info("Nem todo outlier deve ser removido: em música, valores extremos podem indicar faixas inovadoras ou de nicho, enriquecendo a análise. Remover outliers pode eliminar informações valiosas sobre diversidade musical.")
+
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
@@ -347,24 +430,30 @@ def pagina_5_preprocessamento(df):
         default=num_features
     )
     
-    if features_to_scale:
+    scaling_method = st.radio("Método de normalização:", ["StandardScaler (Z-score)", "MinMaxScaler (0-1)"])
+    if scaling_method == "StandardScaler (Z-score)":
         scaler = StandardScaler()
-        df_processed[features_to_scale] = scaler.fit_transform(df_processed[features_to_scale])
+        st.markdown("**StandardScaler** transforma os dados para média 0 e desvio padrão 1 (padronização).")
+    else:
+        from sklearn.preprocessing import MinMaxScaler
+        scaler = MinMaxScaler()
+        st.markdown("**MinMaxScaler** transforma os dados para o intervalo [0, 1] (normalização).")
+    df_processed[features_to_scale] = scaler.fit_transform(df_processed[features_to_scale])
 
-        st.markdown("**Comparação: Antes vs. Depois da Padronização** (para a feature `danceability`)")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("Antes:")
-            fig, ax = plt.subplots(figsize=(6,4))
-            sns.histplot(df['danceability'], kde=True, ax=ax, color='blue')
-            ax.set_title("Original")
-            st.pyplot(fig)
-        with col2:
-            st.write("Depois:")
-            fig, ax = plt.subplots(figsize=(6,4))
-            sns.histplot(df_processed['danceability'], kde=True, ax=ax, color='green')
-            ax.set_title("Padronizado")
-            st.pyplot(fig)
+    st.markdown("**Comparação: Antes vs. Depois da Padronização** (para a feature `danceability`)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("Antes:")
+        fig, ax = plt.subplots(figsize=(6,4))
+        sns.histplot(df['danceability'], kde=True, ax=ax, color='blue')
+        ax.set_title("Original")
+        st.pyplot(fig)
+    with col2:
+        st.write("Depois:")
+        fig, ax = plt.subplots(figsize=(6,4))
+        sns.histplot(df_processed['danceability'], kde=True, ax=ax, color='green')
+        ax.set_title("Padronizado")
+        st.pyplot(fig)
     
     st.markdown("---")
     st.markdown("### 3. One-Hot Encoding para Gêneros")
@@ -373,6 +462,10 @@ def pagina_5_preprocessamento(df):
     """)
     
     if st.checkbox("Aplicar One-Hot Encoding na coluna 'track_genre'?", value=True):
+        top_genres = df_processed['track_genre'].value_counts().nlargest(10).index.tolist()
+        st.warning(f"One-Hot Encoding pode criar muitas colunas. Considere usar apenas os 10 gêneros mais frequentes: {', '.join(top_genres)}")
+        if st.checkbox("Usar apenas os 10 gêneros mais frequentes?"):
+            df_processed = df_processed[df_processed['track_genre'].isin(top_genres)]
         df_processed = pd.get_dummies(df_processed, columns=['track_genre'], prefix='genre')
         st.success(f"One-Hot Encoding aplicado! Novas colunas de gênero foram criadas.")
     
@@ -421,37 +514,49 @@ def pagina_6_reducao_dimensionalidade(df):
         help="Escolha quantos componentes (novas features) você deseja criar. Começar com 10 a 15 é geralmente um bom ponto de partida."
     )
     
-    pca = PCA(n_components=n_components)
-    X_pca = pca.fit_transform(processed_df)
+    reduction_method = st.selectbox("Método de redução de dimensionalidade:", ["PCA", "t-SNE"])
+    if reduction_method == "PCA":
+        pca = PCA(n_components=n_components)
+        X_pca = pca.fit_transform(processed_df)
 
-    st.markdown("### 📊 Variância Explicada")
-    st.markdown("O gráfico abaixo mostra quanta da variância original dos dados é 'capturada' por cada componente principal. O ideal é que os primeiros componentes capturem a maior parte da informação.")
+        st.markdown("### 📊 Variância Explicada")
+        st.markdown("O gráfico acima mostra a variância explicada por cada componente. Use-o para decidir quantos componentes manter.")
 
-    explained_variance = pca.explained_variance_ratio_
-    cumulative_variance = np.cumsum(explained_variance)
+        explained_variance = pca.explained_variance_ratio_
+        cumulative_variance = np.cumsum(explained_variance)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(range(1, n_components + 1), explained_variance, alpha=0.6, color='b', label='Variância Individual')
-    ax.plot(range(1, n_components + 1), cumulative_variance, 'r-o', label='Variância Cumulativa')
-    ax.set_xlabel('Componentes Principais')
-    ax.set_ylabel('Proporção da Variância Explicada')
-    ax.set_title('Variância Explicada pelos Componentes Principais')
-    ax.legend(loc='best')
-    ax.set_xticks(range(1, n_components + 1))
-    st.pyplot(fig)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.bar(range(1, n_components + 1), explained_variance, alpha=0.6, color='b', label='Variância Individual')
+        ax.plot(range(1, n_components + 1), cumulative_variance, 'r-o', label='Variância Cumulativa')
+        ax.set_xlabel('Componentes Principais')
+        ax.set_ylabel('Proporção da Variância Explicada')
+        ax.set_title('Variância Explicada pelos Componentes Principais')
+        ax.legend(loc='best')
+        ax.set_xticks(range(1, n_components + 1))
+        st.pyplot(fig)
 
-    st.info(f"Com **{n_components}** componentes, conseguimos explicar **{cumulative_variance[-1]:.2%}** da variância total dos dados.")
-    
-    st.markdown("### 💿 Dados Transformados pelo PCA")
-    st.markdown("Abaixo está o nosso dataset transformado, agora com um número reduzido de dimensões. Estes serão os dados que usaremos para a clusterização.")
-    
-    df_pca = pd.DataFrame(X_pca, columns=[f'PC_{i+1}' for i in range(n_components)])
-    st.dataframe(df_pca.head())
+        st.info(f"Com **{n_components}** componentes, conseguimos explicar **{cumulative_variance[-1]:.2%}** da variância total dos dados.")
+        
+        st.markdown("### 💿 Dados Transformados pelo PCA")
+        st.markdown("Abaixo está o nosso dataset transformado, agora com um número reduzido de dimensões. Estes serão os dados que usaremos para a clusterização.")
+        
+        df_pca = pd.DataFrame(X_pca, columns=[f'PC_{i+1}' for i in range(n_components)])
+        st.dataframe(df_pca.head())
 
-    if st.button("Salvar dados do PCA para próximas etapas"):
-        st.session_state['pca_df'] = df_pca
-        st.success("Dados transformados pelo PCA salvos na sessão! ✅")
+        if st.button("Salvar dados do PCA para próximas etapas"):
+            st.session_state['pca_df'] = df_pca
+            st.success("Dados transformados pelo PCA salvos na sessão! ✅")
+    else:
+        from sklearn.manifold import TSNE
+        X_tsne = TSNE(n_components=n_components, random_state=42).fit_transform(processed_df)
+        st.info("t-SNE é útil para visualização, mas não preserva variância global como o PCA.")
+        df_pca = pd.DataFrame(X_tsne, columns=[f'tSNE_{i+1}' for i in range(n_components)])
+        st.dataframe(df_pca.head())
 
+        if st.button("Salvar dados do t-SNE para próximas etapas"):
+            st.session_state['pca_df'] = df_pca
+            st.success("Dados transformados pelo t-SNE salvos na sessão! ✅")
+        st.info("Para análise exploratória e clusterização, PCA é geralmente preferido por preservar a variância global e ser mais interpretável. t-SNE é melhor para visualização em 2D/3D.")
 
 def pagina_7_clusterizacao(df):
     st.subheader("🧩 7. Clusterização")
@@ -480,7 +585,20 @@ def pagina_7_clusterizacao(df):
         """)
         k = st.slider("Número de clusters (k):", min_value=2, max_value=20, value=8)
         model = KMeans(n_clusters=k, random_state=42, n_init=10)
-    
+        
+        if st.checkbox("Mostrar gráfico de cotovelo para escolha de k"):
+            inertias = []
+            ks = range(2, 15)
+            for k_val in ks:
+                km = KMeans(n_clusters=k_val, random_state=42, n_init=10)
+                km.fit(X_data)
+                inertias.append(km.inertia_)
+            fig, ax = plt.subplots()
+            ax.plot(ks, inertias, '-o')
+            ax.set_xlabel("Número de clusters (k)")
+            ax.set_ylabel("Inércia")
+            ax.set_title("Gráfico de Cotovelo")
+            st.pyplot(fig)
     elif algo_choice == "DBSCAN":
         st.markdown("""
         **DBSCAN** (Density-Based Spatial Clustering of Applications with Noise) agrupa pontos que estão densamente compactados, marcando como outliers os pontos que estão sozinhos em regiões de baixa densidade. É ótimo para encontrar clusters de formas arbitrárias e não exige que você defina o número de clusters.
@@ -488,7 +606,6 @@ def pagina_7_clusterizacao(df):
         eps = st.slider("Epsilon (eps - raio da vizinhança):", min_value=0.1, max_value=5.0, value=1.5, step=0.1)
         min_samples = st.slider("Número Mínimo de Amostras (min_samples):", min_value=1, max_value=50, value=10)
         model = DBSCAN(eps=eps, min_samples=min_samples)
-
     elif algo_choice == "Clustering Aglomerativo":
         st.markdown("""
         O **Clustering Aglomerativo** realiza uma clusterização hierárquica. Ele começa tratando cada ponto como um cluster separado e, em seguida, mescla recursivamente os pares de clusters mais próximos até que um certo número de clusters seja alcançado.
@@ -515,100 +632,66 @@ def pagina_8_avaliacao_clusters(df):
     Como saber se os clusters que encontramos são bons? Nesta etapa, vamos usar métricas quantitativas e visualizações para avaliar a qualidade dos nossos agrupamentos.
     """)
 
-    if 'cluster_labels' not in st.session_state or st.session_state['cluster_labels'] is None or \
-       'cluster_data' not in st.session_state or st.session_state['cluster_data'] is None:
-        st.warning("Por favor, execute a Clusterização na página '7. Clusterização' antes de continuar.")
+    if (
+        'cluster_labels' not in st.session_state
+        or st.session_state['cluster_labels'] is None
+        or len(st.session_state['cluster_labels']) == 0
+    ):
+        st.warning("Por favor, execute a clusterização na página '7. Clusterização' antes de continuar.")
         return
-        
+
     labels = st.session_state['cluster_labels']
-    data = st.session_state['cluster_data']
+    X_data = st.session_state['cluster_data']
+
+    st.markdown("### 📊 Avaliação Quantitativa")
+    st.markdown("""
+    Vamos usar duas métricas populares para avaliar a qualidade dos clusters:
+    - **Silhouette Score**: Mede quão semelhantes são os objetos dentro de um mesmo cluster em comparação com objetos de outros clusters. Varia de -1 a 1.
+    - **Davies-Bouldin Score**: Mede a compactação e separação dos clusters. Valores mais baixos indicam melhores agrupamentos.
+    """)
+
+    if st.checkbox("Calcular métricas de avaliação"):
+        if len(set(labels)) > 1:
+            silhouette_avg = silhouette_score(X_data, labels)
+            davies_bouldin = davies_bouldin_score(X_data, labels)
+            st.success(f"Silhouette Score: {silhouette_avg:.3f}")
+            st.success(f"Davies-Bouldin Score: {davies_bouldin:.3f}")
+        else:
+            st.warning("Não é possível calcular as métricas. Tente com mais clusters.")
+
+    st.markdown("### 📉 Visualização dos Clusters")
+    st.markdown("""
+    Uma imagem vale mais que mil palavras. Vamos visualizar os clusters em um gráfico 2D. Para isso, usaremos as duas primeiras componentes principais obtidas na redução de dimensionalidade.
+    """)
     
-    # Filtrar pontos de ruído (comuns no DBSCAN) para as métricas
-    if -1 in labels:
-        mask = labels != -1
-        filtered_data = data[mask]
-        filtered_labels = labels[mask]
+    if 'pca_df' in st.session_state:
+        df_pca = st.session_state['pca_df']
+        
+        fig, ax = plt.subplots(figsize=(10, 7))
+        sns.scatterplot(
+            data=df_pca, x='PC_1', y='PC_2', hue=labels, 
+            palette='viridis', style=labels,
+            markers={0: 'o', 1: 'X', 2: 's', 3: 'D', 4: '^', 5: 'v', 6: '<', 7: '>', -1: 'P'}, 
+            s=100, alpha=0.7, ax=ax
+        )
+        ax.set_title("Visualização dos Clusters Encontrados")
+        ax.legend(title="Clusters")
+        st.pyplot(fig)
     else:
-        filtered_data = data
-        filtered_labels = labels
-
-    if len(set(filtered_labels)) < 2:
-        st.error("A avaliação requer pelo menos 2 clusters (excluindo ruído). O algoritmo pode não ter encontrado grupos significativos com os parâmetros atuais.")
-        return
-
-    st.markdown("### 📈 Métricas de Avaliação")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(
-            label="Silhouette Score",
-            value=f"{silhouette_score(filtered_data, filtered_labels):.3f}",
-            help="Mede o quão semelhante um objeto é ao seu próprio cluster em comparação com outros clusters. Varia de -1 a 1. Valores mais altos são melhores."
-        )
-    with col2:
-        st.metric(
-            label="Davies-Bouldin Index",
-            value=f"{davies_bouldin_score(filtered_data, filtered_labels):.3f}",
-            help="Mede a semelhança média entre clusters. Valores mais baixos são melhores, indicando que os clusters estão bem separados."
-        )
-
-    st.markdown("---")
-    st.markdown("### 🎨 Visualização dos Clusters")
-    st.markdown("Aqui podemos ver os clusters plotados nos dois primeiros componentes principais. Cada cor representa um cluster diferente.")
-    
-    # Adicionar os labels ao dataframe de PCA para visualização
-    df_plot = data.copy()
-    df_plot['cluster'] = labels
-
-    fig, ax = plt.subplots(figsize=(12, 8))
-    sns.scatterplot(
-        data=df_plot,
-        x='PC_1',
-        y='PC_2',
-        hue='cluster',
-        palette=sns.color_palette("hsv", n_colors=len(set(labels))),
-        legend='full',
-        alpha=0.7,
-        ax=ax
-    )
-    ax.set_title("Clusters Visualizados em 2D")
-    st.pyplot(fig)
-
-    st.markdown("### 🎶 Explorar Clusters")
-    st.markdown("Selecione um cluster para ver algumas das músicas que pertencem a ele.")
-
-    cluster_id = st.selectbox("Selecione um Cluster ID:", sorted(set(labels)))
-    
-    # Adicionar os labels ao dataframe original para análise
-    df_original_with_clusters = df.iloc[data.index].copy()
-    df_original_with_clusters['cluster'] = labels
-    
-    musicas_no_cluster = df_original_with_clusters[df_original_with_clusters['cluster'] == cluster_id]
-    st.write(f"Mostrando as primeiras 15 músicas do Cluster {cluster_id}:")
-    st.dataframe(musicas_no_cluster[['track_name', 'artists', 'track_genre', 'popularity']])
+        st.warning("Dados do PCA não encontrados. Verifique a etapa de redução de dimensionalidade.")
 
 
-paginas = {
-    "1. Visão Geral dos Dados": pagina_1_visao_geral,
+PAGES = {
+    "1. Visão Geral": pagina_1_visao_geral,
     "2. Análise Univariada": pagina_2_analise_univariada,
-    "3. Correlação entre Variáveis": pagina_3_correlacao,
-    "4. Detecção de Outliers": pagina_4_outliers,
+    "3. Correlação": pagina_3_correlacao,
+    "4. Outliers": pagina_4_outliers,
     "5. Pré-processamento": pagina_5_preprocessamento,
     "6. Redução de Dimensionalidade": pagina_6_reducao_dimensionalidade,
     "7. Clusterização": pagina_7_clusterizacao,
-    "8. Avaliação dos Clusters": pagina_8_avaliacao_clusters
+    "8. Avaliação dos Clusters": pagina_8_avaliacao_clusters,
 }
 
-st.sidebar.title("📊 EDA TuneTAP")
-escolha = st.sidebar.radio("Escolha uma etapa da análise:", list(paginas.keys()))
-
-# Inicializar st.session_state se não existir
-if 'processed_df' not in st.session_state:
-    st.session_state['processed_df'] = None
-if 'pca_df' not in st.session_state:
-    st.session_state['pca_df'] = None
-if 'cluster_labels' not in st.session_state:
-    st.session_state['cluster_labels'] = None
-if 'cluster_data' not in st.session_state:
-    st.session_state['cluster_data'] = None
-
-paginas[escolha](df)
+st.sidebar.title("Navegação")
+page = st.sidebar.radio("Escolha a página:", list(PAGES.keys()))
+PAGES[page](df)

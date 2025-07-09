@@ -172,10 +172,20 @@ def pagina_2_analise_univariada(df):
     st.markdown("Explore a distribuição de cada variável. Use os filtros para comparar diferentes gêneros e ajuste os gráficos para uma análise mais profunda.")
 
     st.markdown("### 🎭 Comparar Distribuições por Gênero")
-    genres_to_compare = st.multiselect(
+    genres = sorted(df['track_genre'].unique().tolist())
+    genres_cap = [g.capitalize() for g in genres]
+    genre_map = dict(zip(genres_cap, genres))
+    genre_filter = st.text_input("Filtrar gêneros (digite parte do nome):", "")
+    filtered_genres = [g for g in genres_cap if genre_filter.lower() in g.lower()]
+    if not filtered_genres:
+        st.warning("Nenhum gênero encontrado com esse filtro.")
+        filtered_genres = genres_cap  # Mostra todos se filtro vazio
+
+    genres_to_compare_cap = st.multiselect(
         "Selecione um ou mais gêneros para comparar (opcional):",
-        sorted(df['track_genre'].unique().tolist())
+        filtered_genres
     )
+    genres_to_compare = [genre_map[g] for g in genres_to_compare_cap]
 
     if genres_to_compare:
         df_filtered = df[df['track_genre'].isin(genres_to_compare)]
@@ -186,6 +196,24 @@ def pagina_2_analise_univariada(df):
 
     st.markdown("### ⚙️ Controles da Análise")
     selected_var = st.selectbox("Selecione uma variável numérica para análise:", num_features)
+    col_descriptions = {
+        "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
+        "duration_ms": "Duração da faixa em milissegundos.",
+        "danceability": "Quão dançante é a faixa, de 0.0 (menos) a 1.0 (mais dançante).",
+        "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
+        "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
+        "loudness": "Volume geral da faixa em decibéis (dB).",
+        "mode": "Modalidade: 1 = maior, 0 = menor.",
+        "speechiness": "Detecta presença de fala. 1.0 = fala pura; 0.0 = música pura.",
+        "acousticness": "Confiança de que a faixa é acústica (0.0 a 1.0).",
+        "instrumentalness": "Probabilidade de não conter vocais. Próximo de 1.0 = instrumental.",
+        "liveness": "Probabilidade de ter sido gravada ao vivo. Acima de 0.8 = performance ao vivo.",
+        "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
+        "tempo": "Tempo estimado da faixa (batidas por minuto).",
+        "time_signature": "Compasso estimado (de 3 a 7)."
+    }
+    if selected_var in col_descriptions:
+        st.info(f"**Descrição:** {col_descriptions[selected_var]}")
 
     num_bins = st.slider("Número de Bins para o Histograma:", min_value=10, max_value=100, value=30)
     
@@ -195,13 +223,19 @@ def pagina_2_analise_univariada(df):
     col1, col2 = st.columns(2)
     with col1:
         fig1, ax1 = plt.subplots()
-        sns.histplot(data=df_filtered, x=selected_var, hue=hue_on, kde=True, ax=ax1, bins=num_bins, palette='viridis')
+        if hue_on:
+            sns.histplot(data=df_filtered, x=selected_var, hue=hue_on, kde=True, ax=ax1, bins=num_bins, palette='viridis')
+        else:
+            sns.histplot(data=df_filtered, x=selected_var, kde=True, ax=ax1, bins=num_bins, color='skyblue')
         ax1.set_title(f"Distribuição de {selected_var}")
         st.pyplot(fig1)
 
     with col2:
-        fig2, ax2 = plt.subplots()
-        sns.boxplot(data=df_filtered, x=selected_var, y=hue_on, ax=ax2, palette='viridis', orient='h')
+        fig2, ax2 = plt.subplots(figsize=(7, 4))
+        if hue_on:
+            sns.boxplot(data=df_filtered, x=selected_var, y=hue_on, ax=ax2, palette='viridis', orient='h')
+        else:
+            sns.boxplot(data=df_filtered, x=selected_var, ax=ax2, color='skyblue', orient='h')
         ax2.set_title(f"Boxplot de {selected_var}")
         st.pyplot(fig2)
 
@@ -225,7 +259,14 @@ def pagina_2_analise_univariada(df):
             st.success("Não foram encontrados outliers com base no critério de 1.5 * IQR. ✨")
         else:
             st.write(f"Foram encontrados **{len(outliers)}** outliers:")
-            st.dataframe(outliers[['track_name', 'artists', 'track_genre', selected_var]].sort_values(by=selected_var, ascending=False))
+            cols_to_show = ['track_name', 'artists', 'track_genre', selected_var]
+            if st.checkbox("Mostrar todas as colunas dos outliers"):
+                st.dataframe(outliers)
+            else:
+                st.dataframe(outliers[cols_to_show].sort_values(by=selected_var, ascending=False))
+
+    if st.checkbox("Mostrar dicionário das variáveis numéricas"):
+        st.table(pd.DataFrame.from_dict(col_descriptions, orient='index', columns=['Descrição']))
 
 def pagina_3_correlacao(df):
     st.subheader("↔️ Análise de Correlação")
@@ -253,8 +294,8 @@ def pagina_3_correlacao(df):
         mask_threshold = np.abs(corr_matrix) < corr_threshold
         mask_heatmap = mask_upper | mask_threshold
         
-        fig, ax = plt.subplots(figsize=(12, 9))
-        sns.heatmap(corr_matrix, mask=mask_heatmap, annot=True, cmap='coolwarm', fmt=".2f", ax=ax, annot_kws={"size": 8}, vmin=-1, vmax=1)
+        fig, ax = plt.subplots(figsize=(14, 10))
+        sns.heatmap(corr_matrix, mask=mask_heatmap, annot=True, cmap='coolwarm', fmt=".2f", ax=ax, annot_kws={"size": 10}, vmin=-1, vmax=1, linewidths=0.5, linecolor='gray')
         ax.set_title(f"Mapa de Calor (Método: {corr_method.capitalize()}, Gênero: {corr_genre})", fontsize=16)
         st.pyplot(fig)
 
@@ -264,14 +305,16 @@ def pagina_3_correlacao(df):
         mask_table = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
         corr_unstacked = corr_matrix.where(mask_table).stack()
         
-        strong_pairs = corr_unstacked.sort_values(key=abs, ascending=False)
+        strong_pairs = corr_unstacked.sort_values(key=abs, ascending=False);
         
         strong_pairs = strong_pairs[abs(strong_pairs) > corr_threshold]
 
         if strong_pairs.empty:
             st.warning("Nenhum par encontrado acima do threshold. Tente um valor menor.")
         else:
-            st.dataframe(strong_pairs.to_frame(name='correlation_value').head(20))
+            df_corr_pairs = strong_pairs.reset_index()
+            df_corr_pairs.columns = ['Variável 1', 'Variável 2', 'Valor da Correlação']
+            st.dataframe(df_corr_pairs.head(20))
 
     else:
         st.warning(f"Não há dados suficientes para o gênero '{corr_genre}' para calcular a correlação.")
@@ -553,100 +596,62 @@ def pagina_8_avaliacao_clusters(df):
     Como saber se os clusters que encontramos são bons? Nesta etapa, vamos usar métricas quantitativas e visualizações para avaliar a qualidade dos nossos agrupamentos.
     """)
 
-    if 'cluster_labels' not in st.session_state or st.session_state['cluster_labels'] is None or \
-       'cluster_data' not in st.session_state or st.session_state['cluster_data'] is None:
-        st.warning("Por favor, execute a Clusterização na página '7. Clusterização' antes de continuar.")
+    if 'cluster_labels' not in st.session_state or st.session_state['cluster_labels'] is None or len(st.session_state['cluster_labels']) == 0:
+        st.warning("Por favor, execute a clusterização na página '7. Clusterização' antes de continuar.")
         return
-        
+
     labels = st.session_state['cluster_labels']
-    data = st.session_state['cluster_data']
+    X_data = st.session_state['cluster_data']
+
+    st.markdown("### 📊 Avaliação Quantitativa")
+    st.markdown("""
+    Vamos usar duas métricas populares para avaliar a qualidade dos clusters:
+    - **Silhouette Score**: Mede quão semelhantes são os objetos dentro de um mesmo cluster em comparação com objetos de outros clusters. Varia de -1 a 1.
+    - **Davies-Bouldin Score**: Mede a compactação e separação dos clusters. Valores mais baixos indicam melhores agrupamentos.
+    """)
+
+    if st.checkbox("Calcular métricas de avaliação"):
+        if len(set(labels)) > 1:
+            silhouette_avg = silhouette_score(X_data, labels)
+            davies_bouldin = davies_bouldin_score(X_data, labels)
+            st.success(f"Silhouette Score: {silhouette_avg:.3f}")
+            st.success(f"Davies-Bouldin Score: {davies_bouldin:.3f}")
+        else:
+            st.warning("Não é possível calcular as métricas. Tente com mais clusters.")
+
+    st.markdown("### 📉 Visualização dos Clusters")
+    st.markdown("""
+    Uma imagem vale mais que mil palavras. Vamos visualizar os clusters em um gráfico 2D. Para isso, usaremos as duas primeiras componentes principais obtidas na redução de dimensionalidade.
+    """)
     
-    # Filtrar pontos de ruído (comuns no DBSCAN) para as métricas
-    if -1 in labels:
-        mask = labels != -1
-        filtered_data = data[mask]
-        filtered_labels = labels[mask]
+    if 'pca_df' in st.session_state:
+        df_pca = st.session_state['pca_df']
+        
+        fig, ax = plt.subplots(figsize=(10, 7))
+        sns.scatterplot(
+            data=df_pca, x='PC1', y='PC2', hue=labels, 
+            palette='viridis', style=labels,
+            markers={0: 'o', 1: 'X', 2: 's', 3: 'D', 4: '^', 5: 'v', 6: '<', 7: '>', -1: 'P'}, 
+            s=100, alpha=0.7, ax=ax
+        )
+        ax.set_title("Visualização dos Clusters Encontrados")
+        ax.legend(title="Clusters")
+        st.pyplot(fig)
     else:
-        filtered_data = data
-        filtered_labels = labels
-
-    if len(set(filtered_labels)) < 2:
-        st.error("A avaliação requer pelo menos 2 clusters (excluindo ruído). O algoritmo pode não ter encontrado grupos significativos com os parâmetros atuais.")
-        return
-
-    st.markdown("### 📈 Métricas de Avaliação")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(
-            label="Silhouette Score",
-            value=f"{silhouette_score(filtered_data, filtered_labels):.3f}",
-            help="Mede o quão semelhante um objeto é ao seu próprio cluster em comparação com outros clusters. Varia de -1 a 1. Valores mais altos são melhores."
-        )
-    with col2:
-        st.metric(
-            label="Davies-Bouldin Index",
-            value=f"{davies_bouldin_score(filtered_data, filtered_labels):.3f}",
-            help="Mede a semelhança média entre clusters. Valores mais baixos são melhores, indicando que os clusters estão bem separados."
-        )
-
-    st.markdown("---")
-    st.markdown("### 🎨 Visualização dos Clusters")
-    st.markdown("Aqui podemos ver os clusters plotados nos dois primeiros componentes principais. Cada cor representa um cluster diferente.")
-    
-    # Adicionar os labels ao dataframe de PCA para visualização
-    df_plot = data.copy()
-    df_plot['cluster'] = labels
-
-    fig, ax = plt.subplots(figsize=(12, 8))
-    sns.scatterplot(
-        data=df_plot,
-        x='PC_1',
-        y='PC_2',
-        hue='cluster',
-        palette=sns.color_palette("hsv", n_colors=len(set(labels))),
-        legend='full',
-        alpha=0.7,
-        ax=ax
-    )
-    ax.set_title("Clusters Visualizados em 2D")
-    st.pyplot(fig)
-
-    st.markdown("### 🎶 Explorar Clusters")
-    st.markdown("Selecione um cluster para ver algumas das músicas que pertencem a ele.")
-
-    cluster_id = st.selectbox("Selecione um Cluster ID:", sorted(set(labels)))
-    
-    # Adicionar os labels ao dataframe original para análise
-    df_original_with_clusters = df.iloc[data.index].copy()
-    df_original_with_clusters['cluster'] = labels
-    
-    musicas_no_cluster = df_original_with_clusters[df_original_with_clusters['cluster'] == cluster_id]
-    st.write(f"Mostrando as primeiras 15 músicas do Cluster {cluster_id}:")
-    st.dataframe(musicas_no_cluster[['track_name', 'artists', 'track_genre', 'popularity']])
+        st.warning("Dados do PCA não encontrados. Verifique a etapa de redução de dimensionalidade.")
 
 
-paginas = {
-    "1. Visão Geral dos Dados": pagina_1_visao_geral,
+PAGES = {
+    "1. Visão Geral": pagina_1_visao_geral,
     "2. Análise Univariada": pagina_2_analise_univariada,
-    "3. Correlação entre Variáveis": pagina_3_correlacao,
-    "4. Detecção de Outliers": pagina_4_outliers,
+    "3. Correlação": pagina_3_correlacao,
+    "4. Outliers": pagina_4_outliers,
     "5. Pré-processamento": pagina_5_preprocessamento,
     "6. Redução de Dimensionalidade": pagina_6_reducao_dimensionalidade,
     "7. Clusterização": pagina_7_clusterizacao,
-    "8. Avaliação dos Clusters": pagina_8_avaliacao_clusters
+    "8. Avaliação dos Clusters": pagina_8_avaliacao_clusters,
 }
 
-st.sidebar.title("📊 EDA TuneTAP")
-escolha = st.sidebar.radio("Escolha uma etapa da análise:", list(paginas.keys()))
-
-# Inicializar st.session_state se não existir
-if 'processed_df' not in st.session_state:
-    st.session_state['processed_df'] = None
-if 'pca_df' not in st.session_state:
-    st.session_state['pca_df'] = None
-if 'cluster_labels' not in st.session_state:
-    st.session_state['cluster_labels'] = None
-if 'cluster_data' not in st.session_state:
-    st.session_state['cluster_data'] = None
-
-paginas[escolha](df)
+st.sidebar.title("Navegação")
+page = st.sidebar.radio("Escolha a página:", list(PAGES.keys()))
+PAGES[page](df)

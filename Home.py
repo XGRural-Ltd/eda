@@ -32,6 +32,27 @@ cols_dict = {'track_id' : 'Track ID',
              'time_signature' : 'Time Signature',
              'track_genre' : 'Track Genre'}
 
+cols_dict = {'track_id' : 'Track ID',
+             'artists' : 'Artists',
+             'album_name' : 'Album Name',
+             'track_name' : 'Track Name',
+             'popularity' : 'Popularity',
+             'duration_ms' : 'Duration (ms)',
+             'explicit' : 'Explicit',
+             'danceability' : 'Danceability',
+             'energy' : 'Energy',
+             'key' : 'Key',
+             'loudness' : 'Loudness',
+             'mode' : 'Mode',
+             'speechiness' : 'Speechiness',
+             'acousticness' : 'Acousticness',
+             'instrumentalness' : 'Instrumentalness',
+             'liveness' : 'Liveness',
+             'valence' : 'Valence',
+             'tempo' : 'Tempo',
+             'time_signature' : 'Time Signature',
+             'track_genre' : 'Track Genre'}
+
 @st.cache_data
 def load_data():
     path = kagglehub.dataset_download("maharshipandya/-spotify-tracks-dataset")

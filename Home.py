@@ -4,33 +4,13 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import kagglehub
+import shap
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from sklearn.metrics import silhouette_score, davies_bouldin_score, silhouette_samples
-
-cols_dict = {'track_id' : 'Track ID',
-             'artists' : 'Artists',
-             'album_name' : 'Album Name',
-             'track_name' : 'Track Name',
-             'popularity' : 'Popularity',
-             'duration_ms' : 'Duration (ms)',
-             'explicit' : 'Explicit',
-             'danceability' : 'Danceability',
-             'energy' : 'Energy',
-             'key' : 'Key',
-             'loudness' : 'Loudness',
-             'mode' : 'Mode',
-             'speechiness' : 'Speechiness',
-             'acousticness' : 'Acousticness',
-             'instrumentalness' : 'Instrumentalness',
-             'liveness' : 'Liveness',
-             'valence' : 'Valence',
-             'tempo' : 'Tempo',
-             'time_signature' : 'Time Signature',
-             'track_genre' : 'Track Genre'}
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 
 cols_dict = {'track_id' : 'Track ID',
              'artists' : 'Artists',
@@ -65,6 +45,7 @@ def load_data():
 df = load_data()
 
 num_features = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+num_features = [col for col in num_features if col not in ['explicit', 'mode', 'key']]
 
 def pagina_1_visao_geral(df):
     st.subheader("📊 Informações Gerais do Dataset")
@@ -221,6 +202,24 @@ def pagina_2_analise_univariada(df):
         "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
         "duration_ms": "Duração da faixa em milissegundos.",
         "danceability": "Quão dançante é a faixa, de 0.0 (menos dançante) a 1.0 (mais dançante).",
+        "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
+        "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
+        "loudness": "Volume geral da faixa em decibéis (dB).",
+        "mode": "Modalidade: 1 = maior, 0 = menor.",
+        "speechiness": "Detecta presença de fala. 1.0 = fala pura; 0.0 = música pura.",
+        "acousticness": "Confiança de que a faixa é acústica (0.0 a 1.0).",
+        "instrumentalness": "Probabilidade de não conter vocais. Próximo de 1.0 = instrumental.",
+        "liveness": "Probabilidade de ter sido gravada ao vivo. Acima de 0.8 = performance ao vivo.",
+        "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
+        "tempo": "Tempo estimado da faixa (batidas por minuto).",
+        "time_signature": "Compasso estimado (de 3 a 7)."
+    }
+    if selected_var in col_descriptions:
+        st.info(f"**Descrição:** {col_descriptions[selected_var]}")
+    col_descriptions = {
+        "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
+        "duration_ms": "Duração da faixa em milissegundos.",
+        "danceability": "Quão dançante é a faixa, de 0.0 (menos) a 1.0 (mais dançante).",
         "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
         "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
         "loudness": "Volume geral da faixa em decibéis (dB).",
@@ -451,8 +450,7 @@ def pagina_5_preprocessamento(df):
         default=num_features
     )
     
-    scaling_method = st.radio("Método de normalização:", ["StandardScaler (Z-score)", "MinMaxScaler (0-1)"])
-    if scaling_method == "StandardScaler (Z-score)":
+    if features_to_scale:
         scaler = StandardScaler()
         st.markdown("**StandardScaler** transforma os dados para média 0 e desvio padrão 1 (padronização).")
     else:
@@ -461,20 +459,20 @@ def pagina_5_preprocessamento(df):
         st.markdown("**MinMaxScaler** transforma os dados para o intervalo [0, 1] (normalização).")
     df_processed[features_to_scale] = scaler.fit_transform(df_processed[features_to_scale])
 
-    st.markdown("**Comparação: Antes vs. Depois da Padronização** (para a feature `danceability`)")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("Antes:")
-        fig, ax = plt.subplots(figsize=(6,4))
-        sns.histplot(df['danceability'], kde=True, ax=ax, color='blue')
-        ax.set_title("Original")
-        st.pyplot(fig)
-    with col2:
-        st.write("Depois:")
-        fig, ax = plt.subplots(figsize=(6,4))
-        sns.histplot(df_processed['danceability'], kde=True, ax=ax, color='green')
-        ax.set_title("Padronizado")
-        st.pyplot(fig)
+        st.markdown("**Comparação: Antes vs. Depois da Padronização** (para a feature `danceability`)")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("Antes:")
+            fig, ax = plt.subplots(figsize=(6,4))
+            sns.histplot(df['danceability'], kde=True, ax=ax, color='blue')
+            ax.set_title("Original")
+            st.pyplot(fig)
+        with col2:
+            st.write("Depois:")
+            fig, ax = plt.subplots(figsize=(6,4))
+            sns.histplot(df_processed['danceability'], kde=True, ax=ax, color='green')
+            ax.set_title("Padronizado")
+            st.pyplot(fig)
     
     st.markdown("---")
     st.markdown("### 3. One-Hot Encoding para Gêneros")
@@ -483,10 +481,6 @@ def pagina_5_preprocessamento(df):
     """)
     
     if st.checkbox("Aplicar One-Hot Encoding na coluna 'track_genre'?", value=True):
-        top_genres = df_processed['track_genre'].value_counts().nlargest(10).index.tolist()
-        st.warning(f"One-Hot Encoding pode criar muitas colunas. Considere usar apenas os 10 gêneros mais frequentes: {', '.join(top_genres)}")
-        if st.checkbox("Usar apenas os 10 gêneros mais frequentes?"):
-            df_processed = df_processed[df_processed['track_genre'].isin(top_genres)]
         df_processed = pd.get_dummies(df_processed, columns=['track_genre'], prefix='genre')
         st.success(f"One-Hot Encoding aplicado! Novas colunas de gênero foram criadas.")
     
@@ -564,20 +558,10 @@ def pagina_6_reducao_dimensionalidade(df):
         df_pca = pd.DataFrame(X_pca, columns=[f'PC_{i+1}' for i in range(n_components)])
         st.dataframe(df_pca.head())
 
-        if st.button("Salvar dados do PCA para próximas etapas"):
-            st.session_state['pca_df'] = df_pca
-            st.success("Dados transformados pelo PCA salvos na sessão! ✅")
-    else:
-        from sklearn.manifold import TSNE
-        X_tsne = TSNE(n_components=n_components, random_state=42).fit_transform(processed_df)
-        st.info("t-SNE é útil para visualização, mas não preserva variância global como o PCA.")
-        df_pca = pd.DataFrame(X_tsne, columns=[f'tSNE_{i+1}' for i in range(n_components)])
-        st.dataframe(df_pca.head())
+    if st.button("Salvar dados do PCA para próximas etapas"):
+        st.session_state['pca_df'] = df_pca
+        st.success("Dados transformados pelo PCA salvos na sessão! ✅")
 
-        if st.button("Salvar dados do t-SNE para próximas etapas"):
-            st.session_state['pca_df'] = df_pca
-            st.success("Dados transformados pelo t-SNE salvos na sessão! ✅")
-        st.info("Para análise exploratória e clusterização, PCA é geralmente preferido por preservar a variância global e ser mais interpretável. t-SNE é melhor para visualização em 2D/3D.")
 
 def pagina_7_clusterizacao(df):
     st.subheader("🧩 7. Clusterização")
@@ -659,6 +643,8 @@ def pagina_8_avaliacao_clusters(df):
         or len(st.session_state['cluster_labels']) == 0
     ):
         st.warning("Por favor, execute a clusterização na página '7. Clusterização' antes de continuar.")
+    if 'cluster_labels' not in st.session_state or st.session_state['cluster_labels'] is None or len(st.session_state['cluster_labels']) == 0:
+        st.warning("Por favor, execute a clusterização na página '7. Clusterização' antes de continuar.")
         return
 
     labels = st.session_state['cluster_labels']
@@ -690,7 +676,7 @@ def pagina_8_avaliacao_clusters(df):
         
         fig, ax = plt.subplots(figsize=(10, 7))
         sns.scatterplot(
-            data=df_pca, x='PC_1', y='PC_2', hue=labels, 
+            data=df_pca, x='PC1', y='PC2', hue=labels, 
             palette='viridis', style=labels,
             markers={0: 'o', 1: 'X', 2: 's', 3: 'D', 4: '^', 5: 'v', 6: '<', 7: '>', -1: 'P'}, 
             s=100, alpha=0.7, ax=ax

@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from sklearn.metrics import silhouette_score, davies_bouldin_score
+from sklearn.metrics import silhouette_score, davies_bouldin_score, silhouette_samples
 
 cols_dict = {'track_id' : 'Track ID',
              'artists' : 'Artists',
@@ -216,24 +216,6 @@ def pagina_2_analise_univariada(df):
     }
     if selected_var in col_descriptions:
         st.info(f"**Descrição:** {col_descriptions[selected_var]}")
-    col_descriptions = {
-        "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
-        "duration_ms": "Duração da faixa em milissegundos.",
-        "danceability": "Quão dançante é a faixa, de 0.0 (menos) a 1.0 (mais dançante).",
-        "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
-        "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
-        "loudness": "Volume geral da faixa em decibéis (dB).",
-        "mode": "Modalidade: 1 = maior, 0 = menor.",
-        "speechiness": "Detecta presença de fala. 1.0 = fala pura; 0.0 = música pura.",
-        "acousticness": "Confiança de que a faixa é acústica (0.0 a 1.0).",
-        "instrumentalness": "Probabilidade de não conter vocais. Próximo de 1.0 = instrumental.",
-        "liveness": "Probabilidade de ter sido gravada ao vivo. Acima de 0.8 = performance ao vivo.",
-        "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
-        "tempo": "Tempo estimado da faixa (batidas por minuto).",
-        "time_signature": "Compasso estimado (de 3 a 7)."
-    }
-    if selected_var in col_descriptions:
-        st.info(f"**Descrição:** {col_descriptions[selected_var]}")
 
     num_bins = st.slider("Número de Bins para o Histograma:", min_value=10, max_value=100, value=30)
     
@@ -363,6 +345,7 @@ def pagina_4_outliers(df):
         0.01, 0.2, 0.05, step=0.01,
         help="Este valor representa a proporção esperada de outliers no dataset. Um valor maior resultará em mais músicas sendo classificadas como anomalias."
     )
+    st.markdown("0.01 a 0.05 é o intervalo mais comum para datasets grandes e razoavelmente limpos, como o nosso. 1%: Use se espera poucos outliers (casos raros, dados bem comportados). 5%: Use se quer ser mais flexível e identificar mais músicas diferentonas ou experimentais.")
 
     st.markdown("---")
     st.markdown("### 🎼 Músicas Anômalas Detectadas")
@@ -412,21 +395,20 @@ def pagina_5_preprocessamento(df):
     st.subheader("⚙️ 5. Pré-processamento dos Dados")
     st.markdown("""
     O pré-processamento é uma etapa fundamental na preparação de dados para modelos de Machine Learning. Aqui, transformaremos nossas features para que os algoritmos possam interpretá-las da melhor forma possível.
-    
+
     Vamos abordar três etapas principais:
     1.  **Imputação de Dados**: Substituir valores ausentes.
     2.  **Feature Scaling**: Padronizar as escalas das nossas variáveis numéricas.
-    3.  **One-Hot Encoding**: Converter variáveis categóricas em um formato numérico.
-    """)
+    """)  # Removido One-Hot Encoding do texto
 
     df_processed = df.copy()
 
     st.markdown("---")
     st.markdown("### 1. Tratamento de Valores Ausentes")
-    st.markdown("""
-    Antes de escalar os dados, precisamos lidar com valores ausentes (NaN). Uma estratégia comum e robusta é a **imputação pela mediana**, onde substituímos os valores ausentes pelo valor central da coluna. Isso é menos sensível a outliers do que usar a média.
+    st.markdown("""o
+    Antes de escalar os dados, precisams lidar com valores ausentes (NaN). Uma estratégia comum e robusta é a **imputação pela mediana**, onde substituímos os valores ausentes pelo valor central da coluna. Isso é menos sensível a outliers do que usar a média.
     """)
-    
+
     # Preencher NaNs com a mediana das colunas numéricas
     numeric_cols_with_na = df_processed[num_features].columns[df_processed[num_features].isnull().any()].tolist()
     if numeric_cols_with_na:
@@ -435,7 +417,6 @@ def pagina_5_preprocessamento(df):
         df_processed.fillna(df_processed.median(numeric_only=True), inplace=True)
     else:
         st.success("Nenhum valor ausente encontrado nas colunas numéricas. ✅")
-    
 
     st.markdown("---")
     st.markdown("### 2. Feature Scaling (Padronização)")
@@ -449,8 +430,13 @@ def pagina_5_preprocessamento(df):
         options=num_features,
         default=num_features
     )
-    
-    if features_to_scale:
+
+    if not features_to_scale:
+        st.warning("Por favor, selecione ao menos uma feature para padronizar.")
+        return
+
+    scaling_method = st.radio("Método de normalização:", ["StandardScaler (Z-score)", "MinMaxScaler (0-1)"])
+    if scaling_method == "StandardScaler (Z-score)":
         scaler = StandardScaler()
         st.markdown("**StandardScaler** transforma os dados para média 0 e desvio padrão 1 (padronização).")
     else:
@@ -459,36 +445,33 @@ def pagina_5_preprocessamento(df):
         st.markdown("**MinMaxScaler** transforma os dados para o intervalo [0, 1] (normalização).")
     df_processed[features_to_scale] = scaler.fit_transform(df_processed[features_to_scale])
 
-        st.markdown("**Comparação: Antes vs. Depois da Padronização** (para a feature `danceability`)")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("Antes:")
-            fig, ax = plt.subplots(figsize=(6,4))
-            sns.histplot(df['danceability'], kde=True, ax=ax, color='blue')
-            ax.set_title("Original")
-            st.pyplot(fig)
-        with col2:
-            st.write("Depois:")
-            fig, ax = plt.subplots(figsize=(6,4))
-            sns.histplot(df_processed['danceability'], kde=True, ax=ax, color='green')
-            ax.set_title("Padronizado")
-            st.pyplot(fig)
-    
-    st.markdown("---")
-    st.markdown("### 3. One-Hot Encoding para Gêneros")
-    st.markdown("""
-    Para usar a feature `track_genre` em nosso modelo, precisamos convertê-la de texto para um formato numérico. O **One-Hot Encoding** cria novas colunas para cada gênero, marcando com `1` se a música pertence àquele gênero e `0` caso contrário.
-    """)
-    
-    if st.checkbox("Aplicar One-Hot Encoding na coluna 'track_genre'?", value=True):
-        df_processed = pd.get_dummies(df_processed, columns=['track_genre'], prefix='genre')
-        st.success(f"One-Hot Encoding aplicado! Novas colunas de gênero foram criadas.")
-    
+    st.markdown("**Comparação: Antes vs. Depois da Padronização/Normalização**")
+    feature_to_compare = st.selectbox(
+        "Escolha uma feature para comparar antes/depois:",
+        features_to_scale,
+        index=0
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("Antes:")
+        fig, ax = plt.subplots(figsize=(6,4))
+        sns.histplot(df[feature_to_compare], kde=True, ax=ax, color='blue')
+        ax.set_title("Original")
+        st.pyplot(fig)
+    with col2:
+        st.write("Depois:")
+        fig, ax = plt.subplots(figsize=(6,4))
+        sns.histplot(df_processed[feature_to_compare], kde=True, ax=ax, color='green')
+        ax.set_title("Padronizado/Normalizado")
+        st.pyplot(fig)
+
     st.markdown("---")
     st.markdown("### 🏁 DataFrame Final Pré-processado")
     st.markdown("Abaixo está uma amostra do nosso dataset após as transformações. Este é o conjunto de dados que usaremos para a clusterização.")
-    
-    final_features = df_processed.select_dtypes(include=np.number).columns.tolist()
+
+    # Use apenas features numéricas contínuas para clusterização e redução de dimensionalidade
+    final_features = [col for col in df_processed.columns if col in num_features]
     final_df = df_processed[final_features]
 
     st.dataframe(final_df.head())
@@ -496,7 +479,7 @@ def pagina_5_preprocessamento(df):
 
     st.markdown("### 💾 Baixar Dados Processados")
     st.markdown("Clique no botão para baixar o DataFrame processado em um arquivo CSV para uso posterior.")
-    
+
     csv = convert_df_to_csv(final_df)
     st.download_button(
        label="Baixar dados como CSV",
@@ -523,14 +506,15 @@ def pagina_6_reducao_dimensionalidade(df):
     processed_df = st.session_state['processed_df']
     
     st.markdown("### ⚙️ Configurando o PCA")
-    n_components = st.slider(
-        "Número de componentes principais para gerar:",
-        min_value=2, max_value=20, value=10,
-        help="Escolha quantos componentes (novas features) você deseja criar. Começar com 10 a 15 é geralmente um bom ponto de partida."
-    )
-    
     reduction_method = st.selectbox("Método de redução de dimensionalidade:", ["PCA", "t-SNE"])
+
     if reduction_method == "PCA":
+        n_components = st.slider(
+            "Número de componentes principais para gerar:",
+            min_value=2, max_value=20, value=10,
+            help="Escolha quantos componentes (novas features) você deseja criar. Começar com 10 a 15 é geralmente um bom ponto de partida."
+        )
+        
         pca = PCA(n_components=n_components)
         X_pca = pca.fit_transform(processed_df)
 
@@ -558,10 +542,25 @@ def pagina_6_reducao_dimensionalidade(df):
         df_pca = pd.DataFrame(X_pca, columns=[f'PC_{i+1}' for i in range(n_components)])
         st.dataframe(df_pca.head())
 
-    if st.button("Salvar dados do PCA para próximas etapas"):
-        st.session_state['pca_df'] = df_pca
-        st.success("Dados transformados pelo PCA salvos na sessão! ✅")
+        if st.button("Salvar dados do PCA para próximas etapas"):
+            st.session_state['pca_df'] = df_pca
+            st.success("Dados transformados pelo PCA salvos na sessão! ✅")
+    else:
+        n_components_tsne = st.slider(
+            "Número de componentes para t-SNE (máx. 3):",
+            min_value=2, max_value=3, value=2,
+            help="O t-SNE só suporta 2 ou 3 componentes."
+        )
+        from sklearn.manifold import TSNE
+        X_tsne = TSNE(n_components=n_components_tsne, random_state=42).fit_transform(processed_df)
+        st.info("t-SNE é útil para visualização, mas não preserva variância global como o PCA.")
+        df_pca = pd.DataFrame(X_tsne, columns=[f'tSNE_{i+1}' for i in range(n_components_tsne)])
+        st.dataframe(df_pca.head())
 
+        if st.button("Salvar dados do t-SNE para próximas etapas"):
+            st.session_state['pca_df'] = df_pca
+            st.success("Dados transformados pelo t-SNE salvos na sessão! ✅")
+        st.info("Para análise exploratória e clusterização, PCA é geralmente preferido por preservar a variância global e ser mais interpretável. t-SNE é melhor para visualização em 2D/3D.")
 
 def pagina_7_clusterizacao(df):
     st.subheader("🧩 7. Clusterização")
@@ -643,8 +642,6 @@ def pagina_8_avaliacao_clusters(df):
         or len(st.session_state['cluster_labels']) == 0
     ):
         st.warning("Por favor, execute a clusterização na página '7. Clusterização' antes de continuar.")
-    if 'cluster_labels' not in st.session_state or st.session_state['cluster_labels'] is None or len(st.session_state['cluster_labels']) == 0:
-        st.warning("Por favor, execute a clusterização na página '7. Clusterização' antes de continuar.")
         return
 
     labels = st.session_state['cluster_labels']
@@ -676,7 +673,7 @@ def pagina_8_avaliacao_clusters(df):
         
         fig, ax = plt.subplots(figsize=(10, 7))
         sns.scatterplot(
-            data=df_pca, x='PC1', y='PC2', hue=labels, 
+            data=df_pca, x='PC_1', y='PC_2', hue=labels, 
             palette='viridis', style=labels,
             markers={0: 'o', 1: 'X', 2: 's', 3: 'D', 4: '^', 5: 'v', 6: '<', 7: '>', -1: 'P'}, 
             s=100, alpha=0.7, ax=ax
@@ -687,6 +684,53 @@ def pagina_8_avaliacao_clusters(df):
     else:
         st.warning("Dados do PCA não encontrados. Verifique a etapa de redução de dimensionalidade.")
 
+def pagina_9_shap(df):
+    st.subheader("🔍 Interpretação de Modelos com SHAP")
+    st.markdown("""
+    O SHAP (SHapley Additive exPlanations) é uma ferramenta poderosa para entender a importância das features e como elas afetam as predições do modelo.
+
+    Nesta seção, você pode:
+    1. Visualizar a importância global das features para o modelo.
+    2. Obter explicações locais para predições específicas.
+    """)
+
+    if 'processed_df' in st.session_state and st.session_state['processed_df'] is not None:
+        df_shap = st.session_state['processed_df']
+        
+        st.markdown("### ⚙️ Configurações do SHAP")
+        st.markdown("Tipo de modelo usado: Random Forest")
+        
+        model_type = "Random Forest"
+        from sklearn.ensemble import RandomForestClassifier
+        # Treinando um modelo de exemplo (Random Forest)
+        X_train = df[num_features]
+        y_train = df['track_genre']
+        model_rf = RandomForestClassifier(random_state=42, n_jobs=-1)
+        model_rf.fit(X_train, y_train)
+            
+        st.success("Modelo Random Forest treinado com sucesso!")
+            
+        # 1. Explainer SHAP
+        explainer = shap.TreeExplainer(model_rf)
+        shap_values = explainer.shap_values(X_train)
+
+        # 2. Importância Global das Features
+        st.markdown("#### Importância Global das Features")
+        fig, ax = plt.subplots()
+        shap.summary_plot(shap_values, X_train, plot_type="bar", ax=ax)
+        plt.title("Importância Global das Features (SHAP)")
+        st.pyplot(fig)
+
+        # 3. Explicação Local de uma predição específica
+        st.markdown("#### Explicação Local de uma Predição")
+        idx = st.slider("Selecione o índice da amostra:", 0, len(X_train)-1, 0)
+        shap.initjs()
+        fig, ax = plt.subplots()
+        shap.force_plot(explainer.expected_value[1], shap_values[1][idx], X_train.iloc[idx], matplotlib=True, ax=ax)
+        st.pyplot(fig)
+        
+    else:
+        st.warning("Os dados processados não estão disponíveis. Por favor, complete o pré-processamento antes de usar o SHAP.")
 
 PAGES = {
     "1. Visão Geral": pagina_1_visao_geral,
@@ -697,6 +741,7 @@ PAGES = {
     "6. Redução de Dimensionalidade": pagina_6_reducao_dimensionalidade,
     "7. Clusterização": pagina_7_clusterizacao,
     "8. Avaliação dos Clusters": pagina_8_avaliacao_clusters,
+    "9. Interpretação SHAP": pagina_9_shap,  # <-- novo item
 }
 
 st.sidebar.title("Navegação")

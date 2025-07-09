@@ -711,22 +711,25 @@ def pagina_9_shap(df):
         st.success("Modelo Random Forest treinado com sucesso!")
             
         # 1. Explainer SHAP
-        explainer = shap.TreeExplainer(model_rf)
-        shap_values = explainer.shap_values(X_train)
+        # Use apenas uma amostra pequena para o SHAP
+        X_sample = X_train.sample(n=500, random_state=42) if len(X_train) > 500 else X_train
 
-        # 2. Importância Global das Features
+        explainer = shap.TreeExplainer(model_rf)
+        shap_values = explainer.shap_values(X_sample)
+
+        # Importância Global das Features
         st.markdown("#### Importância Global das Features")
         fig, ax = plt.subplots()
-        shap.summary_plot(shap_values, X_train, plot_type="bar", ax=ax)
+        shap.summary_plot(shap_values, X_sample, plot_type="bar", ax=ax)
         plt.title("Importância Global das Features (SHAP)")
         st.pyplot(fig)
 
-        # 3. Explicação Local de uma predição específica
+        # Explicação Local de uma predição específica
         st.markdown("#### Explicação Local de uma Predição")
-        idx = st.slider("Selecione o índice da amostra:", 0, len(X_train)-1, 0)
+        idx = st.slider("Selecione o índice da amostra:", 0, len(X_sample)-1, 0)
         shap.initjs()
         fig, ax = plt.subplots()
-        shap.force_plot(explainer.expected_value[1], shap_values[1][idx], X_train.iloc[idx], matplotlib=True, ax=ax)
+        shap.force_plot(explainer.expected_value[1], shap_values[1][idx], X_sample.iloc[idx], matplotlib=True, ax=ax)
         st.pyplot(fig)
         
     else:

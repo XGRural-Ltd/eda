@@ -11,27 +11,6 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 
-cols_dict = {'track_id' : 'Track ID',
-             'artists' : 'Artists',
-             'album_name' : 'Album Name',
-             'track_name' : 'Track Name',
-             'popularity' : 'Popularity',
-             'duration_ms' : 'Duration (ms)',
-             'explicit' : 'Explicit',
-             'danceability' : 'Danceability',
-             'energy' : 'Energy',
-             'key' : 'Key',
-             'loudness' : 'Loudness',
-             'mode' : 'Mode',
-             'speechiness' : 'Speechiness',
-             'acousticness' : 'Acousticness',
-             'instrumentalness' : 'Instrumentalness',
-             'liveness' : 'Liveness',
-             'valence' : 'Valence',
-             'tempo' : 'Tempo',
-             'time_signature' : 'Time Signature',
-             'track_genre' : 'Track Genre'}
-
 @st.cache_data
 def load_data():
     path = kagglehub.dataset_download("maharshipandya/-spotify-tracks-dataset")
@@ -41,16 +20,13 @@ def load_data():
         df['track_genre'] = 'unknown'
     return df
 
-df = load_data()
-
-num_features = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+@st.cache_data
+def convert_df_to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
 
 def pagina_1_visao_geral(df):
     st.subheader("📊 Informações Gerais do Dataset")
     st.write("Nesta etapa vamos ficar mais familiarizados com os dados. Vamos explorar as colunas, tipos de dados, valores ausentes, estatísticas descritivas e visualizar alguns plots.")
-
-    num_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-    
 
     st.markdown("**Visualize o DataFrame com as colunas selecionadas:**")
     cols = st.multiselect("Colunas para exibir:", df.columns.tolist(), default=df.columns[:6].tolist())
@@ -62,42 +38,17 @@ def pagina_1_visao_geral(df):
     desc = desc.map(lambda x: f"{x:.2f}" if isinstance(x, (int, float, np.floating)) else x)
     st.table(desc)
 
+    st.write(f"Existem {df[df.duplicated()].shape[0]} faixas duplicadas nessa base de dados.")
+    st.write(f"Existem {df[df.isnull().any(axis=1)].shape[0]} faixas com dados faltantes.")
+    df = df.dropna(axis=0)
+
     st.markdown("---")
     st.subheader("🧾 Dicionário de Dados: Descrição das Colunas")
-
-    col_descriptions = {
-        "track_id": "O ID do Spotify para a faixa.",
-        "artists": "Nomes dos artistas que performaram a faixa. Se houver mais de um, são separados por ponto e vírgula.",
-        "album_name": "Nome do álbum no qual a faixa aparece.",
-        "track_name": "Nome da faixa.",
-        "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
-        "duration_ms": "Duração da faixa em milissegundos.",
-        "explicit": "Indica se a faixa possui conteúdo explícito (True = sim, False = não).",
-        "danceability": "Quão dançante é a faixa, de 0.0 (menos) a 1.0 (mais dançante).",
-        "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
-        "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
-        "loudness": "Volume geral da faixa em decibéis (dB).",
-        "mode": "Modalidade: 1 = maior, 0 = menor.",
-        "speechiness": "Detecta presença de fala. 1.0 = fala pura; 0.0 = música pura.",
-        "acousticness": "Confiança de que a faixa é acústica (0.0 a 1.0).",
-        "instrumentalness": "Probabilidade de não conter vocais. Próximo de 1.0 = instrumental.",
-        "liveness": "Probabilidade de ter sido gravada ao vivo. Acima de 0.8 = performance ao vivo.",
-        "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
-        "tempo": "Tempo estimado da faixa (batidas por minuto).",
-        "time_signature": "Compasso estimado (de 3 a 7).",
-        "track_genre": "Gênero musical da faixa."
-    }
-
-    available_columns = list(col_descriptions.keys())
-    selected_columns = st.multiselect("Selecione as colunas que deseja entender melhor:", available_columns)
-
-    if selected_columns:
-        for col in selected_columns:
-            st.markdown(f"**🔹 {col}**: {col_descriptions[col]}")
+    st.table(pd.DataFrame.from_dict(col_descriptions, orient='index', columns=['Descrição']))
     
     st.markdown("---")
     st.subheader("📈 Visualizações Gerais de Distribuição")
-
+    num_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
     selected_col = st.selectbox("Selecione uma coluna numérica:", num_cols)
     selected_col_name = cols_dict.get(selected_col)
     plot_type = st.radio("Tipo de gráfico:", ["Histograma", "Boxplot", "Ambos"])
@@ -109,7 +60,6 @@ def pagina_1_visao_geral(df):
         ax_hist.set_ylabel("Frequência")
         ax_hist.set_title(f"Histograma de {selected_col_name}")
         st.pyplot(fig_hist)
-
         # Show boxplot
         fig_box, ax_box = plt.subplots(figsize=(7, 4))
         sns.boxplot(x=df[selected_col], ax=ax_box, color='salmon')
@@ -140,7 +90,6 @@ def pagina_1_visao_geral(df):
     show_trend = st.checkbox("Mostrar linha de tendência (regressão linear)")
     fig, ax = plt.subplots()
     if x_axis == y_axis:
-        # Plot a scatter of the variable against itself (diagonal line)
         sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
         ax.plot(df[x_axis], df[y_axis], color='blue', linewidth=1, alpha=0.5)
     else:
@@ -155,17 +104,16 @@ def pagina_1_visao_geral(df):
     ax.set_title(f"Dispersão entre {x_axis_name} e {y_axis_name}")
     st.pyplot(fig)
 
-    st.markdown("📌 Danceability vs. Energy")
-    st.markdown("- Já esperamnos uma correlação positiva entre 'danceability' e 'energy', pois músicas mais dançantes tendem a ter mais energia.  \n"
-                "- A linha de tendência (regressão linear) ajuda a visualizar uma correlação moderadamente positiva. \n"
-                "\n" 
-                "📌 Acousticness vs. Energy \n"
-                "- Correlação negativa forte esperada, pois músicas acústicas são menos energéticas \n"
-                "- A linha de tendência decrescemte indica uma relação inversamente proporcional. \n"
-                "\n"
-                "📌 Loudness vs. Energy \n"
-                "- Baixa dispersão e ascendência dos pontos mostram uma correlação fortemente positiva (músicas energéticas costumam ser mais altas) \n")
-
+    # st.markdown("📌 Danceability vs. Energy \n"
+    #             "- Já esperamnos uma correlação positiva entre 'danceability' e 'energy', pois músicas mais dançantes tendem a ter mais energia.  \n"
+    #             "- A linha de tendência (regressão linear) ajuda a visualizar uma correlação moderadamente positiva. \n"
+    #             "\n" 
+    #             "📌 Acousticness vs. Energy \n"
+    #             "- Correlação negativa forte esperada, pois músicas acústicas são menos energéticas \n"
+    #             "- A linha de tendência decrescemte indica uma relação inversamente proporcional. \n"
+    #             "\n"
+    #             "📌 Loudness vs. Energy \n"
+    #             "- Baixa dispersão e ascendência dos pontos mostram uma correlação fortemente positiva (músicas energéticas costumam ser mais altas) \n")
 
 def pagina_2_analise_univariada(df):
     st.subheader("🔬 Análise Univariada Detalhada")
@@ -179,7 +127,7 @@ def pagina_2_analise_univariada(df):
     filtered_genres = [g for g in genres_cap if genre_filter.lower() in g.lower()]
     if not filtered_genres:
         st.warning("Nenhum gênero encontrado com esse filtro.")
-        filtered_genres = genres_cap  # Mostra todos se filtro vazio
+        filtered_genres = genres_cap
 
     genres_to_compare_cap = st.multiselect(
         "Selecione um ou mais gêneros para comparar (opcional):",
@@ -196,29 +144,12 @@ def pagina_2_analise_univariada(df):
 
     st.markdown("### ⚙️ Controles da Análise")
     selected_var = st.selectbox("Selecione uma variável numérica para análise:", num_features)
-    col_descriptions = {
-        "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
-        "duration_ms": "Duração da faixa em milissegundos.",
-        "danceability": "Quão dançante é a faixa, de 0.0 (menos) a 1.0 (mais dançante).",
-        "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
-        "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
-        "loudness": "Volume geral da faixa em decibéis (dB).",
-        "mode": "Modalidade: 1 = maior, 0 = menor.",
-        "speechiness": "Detecta presença de fala. 1.0 = fala pura; 0.0 = música pura.",
-        "acousticness": "Confiança de que a faixa é acústica (0.0 a 1.0).",
-        "instrumentalness": "Probabilidade de não conter vocais. Próximo de 1.0 = instrumental.",
-        "liveness": "Probabilidade de ter sido gravada ao vivo. Acima de 0.8 = performance ao vivo.",
-        "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
-        "tempo": "Tempo estimado da faixa (batidas por minuto).",
-        "time_signature": "Compasso estimado (de 3 a 7)."
-    }
     if selected_var in col_descriptions:
         st.info(f"**Descrição:** {col_descriptions[selected_var]}")
 
     num_bins = st.slider("Número de Bins para o Histograma:", min_value=10, max_value=100, value=30)
     
     st.markdown(f"---\n### 🎯 Análise da variável: `{selected_var}`")
-
     st.markdown("**📊 Visualização da Distribuição:**")
     col1, col2 = st.columns(2)
     with col1:
@@ -229,7 +160,6 @@ def pagina_2_analise_univariada(df):
             sns.histplot(data=df_filtered, x=selected_var, kde=True, ax=ax1, bins=num_bins, color='skyblue')
         ax1.set_title(f"Distribuição de {selected_var}")
         st.pyplot(fig1)
-
     with col2:
         fig2, ax2 = plt.subplots(figsize=(7, 4))
         if hue_on:
@@ -247,26 +177,19 @@ def pagina_2_analise_univariada(df):
         st.write("Estatísticas descritivas gerais:")
         st.write(df_filtered[selected_var].describe())
     
-    if st.checkbox(f"Mostrar outliers (músicas com valores extremos) para '{selected_var}'"):
-        q1 = df_filtered[selected_var].quantile(0.25)
-        q3 = df_filtered[selected_var].quantile(0.75)
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-        outliers = df_filtered[(df_filtered[selected_var] < lower_bound) | (df_filtered[selected_var] > upper_bound)]
-        
-        if outliers.empty:
-            st.success("Não foram encontrados outliers com base no critério de 1.5 * IQR. ✨")
-        else:
-            st.write(f"Foram encontrados **{len(outliers)}** outliers:")
-            cols_to_show = ['track_name', 'artists', 'track_genre', selected_var]
-            if st.checkbox("Mostrar todas as colunas dos outliers"):
-                st.dataframe(outliers)
-            else:
-                st.dataframe(outliers[cols_to_show].sort_values(by=selected_var, ascending=False))
-
-    if st.checkbox("Mostrar dicionário das variáveis numéricas"):
-        st.table(pd.DataFrame.from_dict(col_descriptions, orient='index', columns=['Descrição']))
+    q1 = df_filtered[selected_var].quantile(0.25)
+    q3 = df_filtered[selected_var].quantile(0.75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+    outliers = df_filtered[(df_filtered[selected_var] < lower_bound) | (df_filtered[selected_var] > upper_bound)]
+    
+    if outliers.empty:
+        st.success("Não foram encontrados outliers com base no critério de 1.5 * IQR. ✨")
+    else:
+        st.write(f"Foram encontrados **{len(outliers)}** outliers:")
+        cols_to_show = ['track_name', 'artists', 'track_genre', selected_var]
+        st.dataframe(outliers[cols_to_show].sort_values(by=selected_var, ascending=False))
 
 def pagina_3_correlacao(df):
     st.subheader("↔️ Análise de Correlação")
@@ -381,10 +304,6 @@ def pagina_4_outliers(df):
         st.pyplot(fig)
     else:
         st.info("Selecione 2 ou mais features para visualizar o gráfico de dispersão com PCA.")
-
-@st.cache_data
-def convert_df_to_csv(df):
-    return df.to_csv(index=False).encode('utf-8')
 
 def pagina_5_preprocessamento(df):
     st.subheader("⚙️ 5. Pré-processamento dos Dados")
@@ -533,7 +452,6 @@ def pagina_6_reducao_dimensionalidade(df):
         st.session_state['pca_df'] = df_pca
         st.success("Dados transformados pelo PCA salvos na sessão! ✅")
 
-
 def pagina_7_clusterizacao(df):
     st.subheader("🧩 7. Clusterização")
     st.markdown("""
@@ -640,18 +558,61 @@ def pagina_8_avaliacao_clusters(df):
     else:
         st.warning("Dados do PCA não encontrados. Verifique a etapa de redução de dimensionalidade.")
 
+df = load_data()
+num_features = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+cols_dict = {'track_id' : 'Track ID',
+             'artists' : 'Artists',
+             'album_name' : 'Album Name',
+             'track_name' : 'Track Name',
+             'popularity' : 'Popularity',
+             'duration_ms' : 'Duration (ms)',
+             'explicit' : 'Explicit',
+             'danceability' : 'Danceability',
+             'energy' : 'Energy',
+             'key' : 'Key',
+             'loudness' : 'Loudness',
+             'mode' : 'Mode',
+             'speechiness' : 'Speechiness',
+             'acousticness' : 'Acousticness',
+             'instrumentalness' : 'Instrumentalness',
+             'liveness' : 'Liveness',
+             'valence' : 'Valence',
+             'tempo' : 'Tempo',
+             'time_signature' : 'Time Signature',
+             'track_genre' : 'Track Genre'}
+col_descriptions = {
+        "track_id": "O ID do Spotify para a faixa.",
+        "artists": "Nomes dos artistas que performaram a faixa. Se houver mais de um, são separados por ponto e vírgula.",
+        "album_name": "Nome do álbum no qual a faixa aparece.",
+        "track_name": "Nome da faixa.",
+        "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
+        "duration_ms": "Duração da faixa em milissegundos.",
+        "explicit": "Indica se a faixa possui conteúdo explícito (True = sim, False = não).",
+        "danceability": "Quão dançante é a faixa, de 0.0 (menos) a 1.0 (mais dançante).",
+        "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
+        "key": "Tom da música (0 = Dó, 1 = Dó♯/Ré♭, ..., -1 = indetectável).",
+        "loudness": "Volume geral da faixa em decibéis (dB).",
+        "mode": "Modalidade: 1 = maior, 0 = menor.",
+        "speechiness": "Detecta presença de fala. 1.0 = fala pura; 0.0 = música pura.",
+        "acousticness": "Confiança de que a faixa é acústica (0.0 a 1.0).",
+        "instrumentalness": "Probabilidade de não conter vocais. Próximo de 1.0 = instrumental.",
+        "liveness": "Probabilidade de ter sido gravada ao vivo. Acima de 0.8 = performance ao vivo.",
+        "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
+        "tempo": "Tempo estimado da faixa (batidas por minuto).",
+        "time_signature": "Compasso estimado (de 3 a 7).",
+        "track_genre": "Gênero musical da faixa."
+    }
 
 PAGES = {
     "1. Visão Geral": pagina_1_visao_geral,
     "2. Análise Univariada": pagina_2_analise_univariada,
     "3. Correlação": pagina_3_correlacao,
-    "4. Outliers": pagina_4_outliers,
+    #"4. Outliers": pagina_4_outliers,
     "5. Pré-processamento": pagina_5_preprocessamento,
     "6. Redução de Dimensionalidade": pagina_6_reducao_dimensionalidade,
     "7. Clusterização": pagina_7_clusterizacao,
     "8. Avaliação dos Clusters": pagina_8_avaliacao_clusters,
 }
-
 st.sidebar.title("Navegação")
 page = st.sidebar.radio("Escolha a página:", list(PAGES.keys()))
 PAGES[page](df)

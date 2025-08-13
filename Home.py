@@ -421,13 +421,13 @@ def pagina_avaliacao_clusters(df):
         return
 
     labels = st.session_state['cluster_labels']
-    X_data = st.session_state['cluster_data']
+    # This is the correct DataFrame to use, as it's guaranteed to be in the session state
+    X_data = st.session_state['cluster_data'] 
 
     st.markdown("### 📊 Avaliação Quantitativa")
     st.markdown("""
-    Vamos usar duas métricas populares para avaliar a qualidade dos clusters:
-    - **Silhouette Score**: Mede quão semelhantes são os objetos dentro de um mesmo cluster em comparação com objetos de outros clusters. Varia de -1 a 1.
-    - **Davies-Bouldin Score**: Mede a compactação e separação dos clusters. Valores mais baixos indicam melhores agrupamentos.
+    - **Silhouette Score**: Mede quão semelhantes são os objetos dentro de um mesmo cluster em comparação com objetos de outros clusters. Varia de -1 a 1 (mais alto é melhor).
+    - **Davies-Bouldin Score**: Mede a compactação e separação dos clusters. Valores mais baixos indicam melhores agrupamentos (mais baixo é melhor).
     """)
 
     if st.checkbox("Calcular métricas de avaliação"):
@@ -437,57 +437,90 @@ def pagina_avaliacao_clusters(df):
             st.success(f"Silhouette Score: {silhouette_avg:.3f}")
             st.success(f"Davies-Bouldin Score: {davies_bouldin:.3f}")
         else:
-            st.warning("Não é possível calcular as métricas. Tente com mais clusters.")
+            st.warning("Não é possível calcular as métricas com apenas um cluster.")
 
     st.markdown("### 📉 Visualização dos Clusters")
     st.markdown("""
-    Uma imagem vale mais que mil palavras. Vamos visualizar os clusters em um gráfico 2D. Para isso, usaremos as duas primeiras componentes principais obtidas na redução de dimensionalidade.
+    Uma imagem vale mais que mil palavras. Vamos visualizar os clusters em um gráfico 2D usando as duas primeiras componentes principais.
     """)
     
-    if 'df_pca' in st.session_state:
-        df_pca = st.session_state['df_pca']
-        
+    # Check if the needed DataFrame and columns exist
+    if 'PC_1' in X_data.columns and 'PC_2' in X_data.columns:
         fig, ax = plt.subplots(figsize=(10, 7))
+        # FIX: Use X_data and the correct column names 'PC_1' and 'PC_2'
         sns.scatterplot(
-            data=df_pca, x='PC1', y='PC2', hue=labels, 
-            palette='viridis', style=labels,
-            markers={0: 'o', 1: 'X', 2: 's', 3: 'D', 4: '^', 5: 'v', 6: '<', 7: '>', -1: 'P'}, 
-            s=100, alpha=0.7, ax=ax
+            data=X_data, x='PC_1', y='PC_2', hue=labels,
+            palette='viridis',
+            s=80, alpha=0.7, ax=ax, legend='full'
         )
         ax.set_title("Visualização dos Clusters Encontrados")
+        ax.set_xlabel("Componente Principal 1 (PC_1)")
+        ax.set_ylabel("Componente Principal 2 (PC_2)")
         ax.legend(title="Clusters")
         st.pyplot(fig)
     else:
-        st.warning("Dados do PCA não encontrados. Verifique a etapa de redução de dimensionalidade.")
+        st.warning("Dados do PCA (com colunas PC_1 e PC_2) não encontrados. Verifique a etapa '6. Redução de Dimensionalidade'.")
+
+import joblib # Make sure joblib is imported at the top of your file
 
 def pagina_predicao(df):
-    # Carregue modelo, encoder e dados
-    rf = joblib.load('random_forest_model.pkl')
-    le = joblib.load('label_encoder.pkl')
-    selected_features = joblib.load('selected_features.pkl')
-    scaler = joblib.load('scaler.pkl')
-    df = pd.read_csv('seu_dataset.csv')
+    st.subheader("🔮 9. Predição de Popularidade")
+    st.markdown("""
+    Use o modelo de Machine Learning para prever a popularidade de uma música com base em suas características. 
+    Selecione um gênero e veja a popularidade média prevista para as músicas desse gênero.
+    """)
 
-    # Interface
-    generos = sorted(df['track_genre'].unique())
-    generos_escolhidos = st.multiselect("Escolha os gêneros:", generos)
-    tam_playlist = st.slider("Tamanho da playlist:", 5, 50, 10)
+    # Load pre-trained model and other assets
+    try:
+        model = joblib.load('random_forest_model.pkl')
+        scaler = joblib.load('scaler.pkl')
+        selected_features = joblib.load('selected_features.pkl')
+    except FileNotFoundError:
+        st.error("Erro: Arquivos de modelo (.pkl) não encontrados. Tente rodar o script 'pipeline_script.py' ou  adicionar um path absoluto na declaração dos arquivos 'random_forest_model.pkl', 'scaler.pkl' e 'selected_features.pkl' ")
+        return
 
-    if generos_escolhidos:
-        # Filtrar músicas dos gêneros escolhidos
-        df_filtrado = df[df['track_genre'].isin(generos_escolhidos)].copy()
-        # (Opcional) Prever o gênero das músicas filtradas e pegar as mais "típicas"
-        X_filtrado = scaler.transform(df_filtrado[selected_features])
-        pred = rf.predict(X_filtrado)
-        probas = rf.predict_proba(X_filtrado).max(axis=1)
-        df_filtrado['probabilidade'] = probas
-        # Ordena pelas mais "típicas" (maior probabilidade do modelo)
-        df_final = df_filtrado.sort_values('probabilidade', ascending=False).head(tam_playlist)
-        # Exibe a playlist
-        st.write("Sua playlist personalizada:")
-        st.dataframe(df_final[['track_name', 'artists', 'track_genre']])
+    # Let user filter by genre
+    genre_list = ['Todos'] + sorted(df['track_genre'].unique().tolist())
+    selected_genre = st.selectbox("Selecione um Gênero Musical", genre_list)
+
+    if selected_genre == 'Todos':
+        df_filtrado = df
     else:
-        st.info("Selecione pelo menos um gênero.")
+        df_filtrado = df[df['track_genre'] == selected_genre]
+    
+    st.write(f"Analisando {len(df_filtrado)} faixas do gênero '{selected_genre}'.")
+
+    if st.button("Prever Popularidade"):
+        if df_filtrado.empty:
+            st.warning("Nenhuma música encontrada para o gênero selecionado.")
+            return
+
+        # ---- THIS IS THE CRITICAL PART ----
+        # Ensure the dataframe has ONLY the columns the model was trained on, in the correct order.
+        X_features = df_filtrado[selected_features]
+        # ---------------------------------
+
+        # Apply the scaler to the correctly filtered data
+        X_scaled = scaler.transform(X_features)
+
+        # Make predictions
+        predictions = model.predict(X_scaled)
+        
+        # Display results
+        average_popularity = np.mean(predictions)
+        st.success(f"A popularidade média prevista para o gênero '{selected_genre}' é: **{average_popularity:.2f}**")
+
+        # Show feature importance
+        if hasattr(model, 'feature_importances_'):
+            st.markdown("#### Importância das Características para a Predição")
+            feature_imp = pd.Series(model.feature_importances_, index=selected_features).sort_values(ascending=False)
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.barplot(x=feature_imp, y=feature_imp.index, palette='viridis', ax=ax)
+            ax.set_title("Importância das Características no Modelo")
+            ax.set_ylabel("Características")
+            ax.set_xlabel("Score de Importância")
+            st.pyplot(fig)
 
 df = load_data()
 num_features = df.select_dtypes(include=['float64', 'int64']).columns.tolist()

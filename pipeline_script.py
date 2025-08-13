@@ -36,28 +36,36 @@ df_no_outliers = df[df['anomaly'] != -1].copy()
 top_n = 10
 top_genres = df_no_outliers['track_genre'].value_counts().nlargest(top_n).index
 df_no_outliers['track_genre_grouped'] = df_no_outliers['track_genre'].where(df_no_outliers['track_genre'].isin(top_genres), 'outros')
+
+# Remover a classe 'outros' ANTES de criar df_processed
 df_no_outliers = df_no_outliers[df_no_outliers['track_genre_grouped'] != 'outros'].copy()
 
-# --- Imputação e normalização ---
+# --- Imputação e padronização ---
 df_no_outliers[num_features] = df_no_outliers[num_features].fillna(df_no_outliers[num_features].median())
 scaler = StandardScaler()
 scaler_norm = MinMaxScaler()
-X_scaled = scaler.fit_transform(df_no_outliers[num_features])
-X_scaled = scaler_norm.fit_transform(X_scaled)
+df_processed = df_no_outliers.copy()
+df_processed[num_features] = scaler.fit_transform(df_processed[num_features])
+df_processed[num_features] = scaler_norm.fit_transform(df_processed[num_features])
 
 # --- Seleção de features importantes ---
 rf_temp = RandomForestClassifier(n_estimators=30, random_state=42)
-rf_temp.fit(X_scaled, df_no_outliers['track_genre_grouped'])
+rf_temp.fit(df_processed[num_features], df_processed['track_genre_grouped'])
 importances = pd.Series(rf_temp.feature_importances_, index=num_features).sort_values(ascending=False)
 selected_features = importances.head(10).index.tolist()
 
 # --- Balanceamento com SMOTE ---
-X = pd.DataFrame(X_scaled, columns=num_features)[selected_features]
-y = df_no_outliers['track_genre_grouped']
+X = df_processed[selected_features]
+y = df_processed['track_genre_grouped']
+
 le = LabelEncoder()
 y_encoded = le.fit_transform(y)
 smote = SMOTE(random_state=42)
 X_bal, y_bal = smote.fit_resample(X, y_encoded)
+
+max_samples = 5000
+if X_bal.shape[0] > max_samples:
+    X_bal, y_bal = resample(X_bal, y_bal, n_samples=max_samples, random_state=42, stratify=y_bal)
 
 # --- Split treino/teste ---
 X_train, X_test, y_train, y_test = train_test_split(X_bal, y_bal, test_size=0.2, random_state=42, stratify=y_bal)
@@ -65,6 +73,13 @@ X_train, X_test, y_train, y_test = train_test_split(X_bal, y_bal, test_size=0.2,
 # --- Treinamento do melhor modelo (Random Forest) ---
 rf = RandomForestClassifier(n_estimators=70, random_state=42)
 rf.fit(X_train, y_train)
+
+from sklearn.metrics import accuracy_score, classification_report
+
+y_pred = rf.predict(X_test)
+acc = accuracy_score(y_test, y_pred)
+print(f"Acurácia no teste: {acc:.4f}")
+print(classification_report(y_test, y_pred, target_names=le.classes_))
 
 # --- Exportação dos objetos necessários ---
 joblib.dump(rf, 'random_forest_model.pkl')

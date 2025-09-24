@@ -74,13 +74,6 @@ X_train, X_test, y_train, y_test = train_test_split(X_bal, y_bal, test_size=0.2,
 rf = RandomForestClassifier(n_estimators=70, random_state=42)
 rf.fit(X_train, y_train)
 
-from sklearn.metrics import accuracy_score, classification_report
-
-y_pred = rf.predict(X_test)
-acc = accuracy_score(y_test, y_pred)
-print(f"Acurácia no teste: {acc:.4f}")
-print(classification_report(y_test, y_pred, target_names=le.classes_))
-
 # --- Exportação dos objetos necessários ---
 joblib.dump(rf, 'random_forest_model.pkl')
 joblib.dump(le, 'label_encoder.pkl')

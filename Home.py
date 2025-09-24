@@ -29,95 +29,123 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 def pagina_visao_geral(df):
-    st.subheader("📊 Informações Gerais do Dataset")
-    st.write("Nesta etapa vamos ficar mais familiarizados com os dados. Vamos explorar as colunas, tipos de dados, valores ausentes, estatísticas descritivas e visualizar alguns plots.")
+    st.subheader("🎵 Visão Geral do Spotify Dataset")
+    st.write("Explore as principais características do universo musical do Spotify. Aqui estão alguns destaques e visualizações iniciais para entender o potencial dos dados.")
 
-    st.markdown("**Visualize o DataFrame com as colunas selecionadas:**")
-    cols = st.multiselect("Colunas para exibir:", df.columns.tolist(), default=df.columns[:6].tolist())
-    st.dataframe(df[cols].head(15), hide_index=True)
+    # Métricas rápidas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Faixas únicas", f"{df['track_id'].nunique():,}")
+        st.metric("Artistas", f"{df['artists'].nunique():,}")
+    with col2:
+        st.metric("Gêneros", f"{df['track_genre'].nunique():,}")
+        st.metric("Álbuns", f"{df['album_name'].nunique():,}")
+    with col3:
+        st.metric("Faixas populares (>80)", f"{(df['popularity'] > 80).sum():,}")
+        st.metric("Faixas explícitas", f"{df['explicit'].sum():,}")
 
-    st.markdown("**Estatísticas descritivas:**")
-    desc = df.describe().rename(columns=cols_dict).T
-    desc = desc.drop(columns=['count'])
-    desc = desc.map(lambda x: f"{x:.2f}" if isinstance(x, (int, float, np.floating)) else x)
-    st.table(desc)
+    # Estatísticas descritivas
+    st.markdown("### 📊 Estatísticas Descritivas das Principais Variáveis")
+    st.dataframe(df[num_features].describe().T)
 
-    st.write(f"Existem {df[df.duplicated()].shape[0]} faixas duplicadas nessa base de dados.")
-    st.write(f"Existem {df[df.isnull().any(axis=1)].shape[0]} faixas com dados faltantes.")
-    df = df.dropna(axis=0)
+    # Wordcloud de artistas
+    from wordcloud import WordCloud
+    st.markdown("### ☁️ Wordcloud dos Artistas Mais Frequentes")
+    # Corrige valores nulos e converte para string
+    artistas_texto = ' '.join(df['artists'].dropna().astype(str))
+    fig_wc, ax_wc = plt.subplots(figsize=(8, 4))
+    wc = WordCloud(width=800, height=400, background_color='white').generate(artistas_texto)
+    ax_wc.imshow(wc, interpolation='bilinear')
+    ax_wc.axis('off')
+    st.pyplot(fig_wc)
 
-    st.markdown("---")
-    st.subheader("🧾 Dicionário de Dados: Descrição das Colunas")
-    st.table(pd.DataFrame.from_dict(col_descriptions, orient='index', columns=['Descrição']))
-    
-    st.markdown("---")
-    st.subheader("📈 Visualizações Gerais de Distribuição")
-    num_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-    selected_col = st.selectbox("Selecione uma coluna numérica:", num_cols)
-    selected_col_name = cols_dict.get(selected_col)
-    plot_type = st.radio("Tipo de gráfico:", ["Histograma", "Boxplot", "Ambos"])
-    if plot_type == "Ambos":
-        # Show histogram
-        fig_hist, ax_hist = plt.subplots(figsize=(7, 4))
-        sns.histplot(df[selected_col], kde=True, ax=ax_hist, color='skyblue')
-        ax_hist.set_xlabel(selected_col_name)
-        ax_hist.set_ylabel("Frequência")
-        ax_hist.set_title(f"Histograma de {selected_col_name}")
-        st.pyplot(fig_hist)
-        # Show boxplot
-        fig_box, ax_box = plt.subplots(figsize=(7, 4))
-        sns.boxplot(x=df[selected_col], ax=ax_box, color='salmon')
-        ax_box.set_xlabel(selected_col_name)
-        ax_box.set_ylabel("Valor")
-        ax_box.set_title(f"Boxplot de {selected_col_name}")
-        st.pyplot(fig_box)
-    else:
-        fig, ax = plt.subplots(figsize=(7, 4))
-        if plot_type == "Histograma":
-            sns.histplot(df[selected_col], kde=True, ax=ax, color='skyblue')
-            ax.set_xlabel(selected_col_name)
-            ax.set_ylabel("Frequência")
-            ax.set_title(f"Histograma de {selected_col_name}")
-        else:
-            sns.boxplot(x=df[selected_col], ax=ax, color='salmon')
-            ax.set_xlabel(selected_col_name)
-            ax.set_ylabel("Valor")
-            ax.set_title(f"Boxplot de {selected_col_name}")
-        st.pyplot(fig)
+    # Distribuição temporal (se houver coluna de ano)
+    if 'release_year' in df.columns:
+        st.markdown("### 📅 Evolução do Número de Faixas por Ano")
+        fig_year, ax_year = plt.subplots(figsize=(8, 4))
+        df['release_year'] = df['release_year'].astype(int)
+        sns.countplot(x='release_year', data=df, ax=ax_year, palette='crest')
+        ax_year.set_title("Faixas por Ano de Lançamento")
+        st.pyplot(fig_year)
 
-    st.markdown("---")
-    st.subheader("📈 Gráficos de Dispersão entre Variáveis Numéricas")
-    x_axis = st.selectbox("Variável no eixo X:", num_features, index=0)
-    y_axis = st.selectbox("Variável no eixo Y:", num_features, index=1)
-    x_axis_name = cols_dict.get(x_axis)
-    y_axis_name = cols_dict.get(y_axis)
-    show_trend = st.checkbox("Mostrar linha de tendência (regressão linear)")
-    fig, ax = plt.subplots()
-    if x_axis == y_axis:
-        sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
-        ax.plot(df[x_axis], df[y_axis], color='blue', linewidth=1, alpha=0.5)
-    else:
-        if show_trend:
-            sns.regplot(data=df, x=x_axis, y=y_axis, ax=ax,
-                        scatter_kws={'alpha': 0.5, 'color': 'red'},
-                        line_kws={"color": "blue"})
-        else:
-            sns.scatterplot(data=df, x=x_axis, y=y_axis, alpha=0.5, color='red', ax=ax)
-    ax.set_xlabel(x_axis_name)
-    ax.set_ylabel(y_axis_name)
-    ax.set_title(f"Dispersão entre {x_axis_name} e {y_axis_name}")
-    st.pyplot(fig)
+    # Heatmap de correlação inicial
+    st.markdown("### 🔥 Heatmap de Correlação das Variáveis Numéricas")
+    corr_matrix = df[num_features].corr()
+    fig_corr, ax_corr = plt.subplots(figsize=(10, 7))
+    sns.heatmap(corr_matrix, annot=False, cmap='coolwarm', ax=ax_corr)
+    ax_corr.set_title("Correlação entre Variáveis")
+    st.pyplot(fig_corr)
+    # Pares mais correlacionados
+    mask_table = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+    corr_unstacked = corr_matrix.where(mask_table).stack()
+    strong_pairs = corr_unstacked[abs(corr_unstacked) > 0.4].sort_values(key=abs, ascending=False)
+    if not strong_pairs.empty:
+        st.markdown("**Principais pares de variáveis correlacionadas (|corr| > 0.4):**")
+        st.dataframe(strong_pairs.reset_index().rename(columns={0: "Correlação"}))
 
-    # st.markdown("📌 Danceability vs. Energy \n"
-    #             "- Já esperamnos uma correlação positiva entre 'danceability' e 'energy', pois músicas mais dançantes tendem a ter mais energia.  \n"
-    #             "- A linha de tendência (regressão linear) ajuda a visualizar uma correlação moderadamente positiva. \n"
-    #             "\n" 
-    #             "📌 Acousticness vs. Energy \n"
-    #             "- Correlação negativa forte esperada, pois músicas acústicas são menos energéticas \n"
-    #             "- A linha de tendência decrescemte indica uma relação inversamente proporcional. \n"
-    #             "\n"
-    #             "📌 Loudness vs. Energy \n"
-    #             "- Baixa dispersão e ascendência dos pontos mostram uma correlação fortemente positiva (músicas energéticas costumam ser mais altas) \n")
+    # Proporção de faixas explícitas
+    st.markdown("### 🔥 Proporção de Faixas Explícitas")
+    explicit_counts = df['explicit'].value_counts()
+    fig_explicit, ax_explicit = plt.subplots(figsize=(5, 3))
+    ax_explicit.pie(explicit_counts, labels=['Não explícita', 'Explícita'], autopct='%1.1f%%', colors=['#66b3ff', '#ff6666'])
+    ax_explicit.set_title("Faixas Explícitas vs. Não Explícitas")
+    st.pyplot(fig_explicit)
+
+    # Top gêneros e artistas
+    st.markdown("### 🏆 Top 10 Gêneros por Popularidade Média")
+    top_genres = df.groupby('track_genre')['popularity'].mean().sort_values(ascending=False).head(10)
+    st.bar_chart(top_genres)
+
+    st.markdown("### 🎤 Top 10 Artistas por Número de Faixas")
+    top_artists = df['artists'].value_counts().head(10)
+    st.bar_chart(top_artists)
+
+    # Distribuição da duração
+    st.markdown("### ⏱️ Distribuição da Duração das Faixas")
+    fig_dur, ax_dur = plt.subplots(figsize=(8, 4))
+    sns.histplot(df['duration_ms'] / 60000, bins=30, kde=True, color='purple', ax=ax_dur)
+    ax_dur.set_xlabel("Duração (minutos)")
+    ax_dur.set_title("Distribuição da Duração das Faixas")
+    st.pyplot(fig_dur)
+
+    # Curiosidades musicais
+    st.markdown("### 💡 Curiosidades Musicais")
+    st.write(f"- Faixa mais longa: **{df.loc[df['duration_ms'].idxmax(), 'track_name']}** ({df['duration_ms'].max()/60000:.2f} min)")
+    st.write(f"- Faixa mais dançante: **{df.loc[df['danceability'].idxmax(), 'track_name']}** (Danceability: {df['danceability'].max():.2f})")
+    st.write(f"- Faixa mais energética: **{df.loc[df['energy'].idxmax(), 'track_name']}** (Energy: {df['energy'].max():.2f})")
+    st.write(f"- Faixa mais popular: **{df.loc[df['popularity'].idxmax(), 'track_name']}** (Popularity: {df['popularity'].max()})")
+
+    # Distribuição da popularidade
+    st.markdown("### 📈 Distribuição da Popularidade das Faixas")
+    fig_pop, ax_pop = plt.subplots(figsize=(8, 4))
+    sns.histplot(df['popularity'], bins=30, kde=True, color='gold', ax=ax_pop)
+    ax_pop.set_title("Distribuição da Popularidade")
+    st.pyplot(fig_pop)
+
+    # Scatterplot colorido por gênero
+    st.markdown("### 🔗 Relação entre Danceability e Energy (Colorido por Gênero)")
+    fig_scatter, ax_scatter = plt.subplots(figsize=(7, 5))
+    sns.scatterplot(data=df, x='danceability', y='energy', hue='track_genre', alpha=0.3, ax=ax_scatter, legend=False)
+    ax_scatter.set_title("Danceability vs. Energy")
+    st.pyplot(fig_scatter)
+
+    # Amostra de faixas
+    st.markdown("### 🧾 Amostra de Faixas")
+    st.dataframe(df[['track_name', 'artists', 'track_genre', 'popularity', 'danceability', 'energy']].sample(15), hide_index=True)
+
+    st.markdown("obs.: Os dados são balanceados em 1000 faixas por gênero.")
+    # # Sugestão de perguntas
+    # st.markdown("### ❓ Perguntas que este EDA responde")
+    # st.write("""
+    # - Quais gêneros têm faixas mais populares?
+    # - Existe relação entre energia e dançabilidade?
+    # - Quais artistas são mais frequentes no dataset?
+    # - Qual a distribuição de faixas explícitas?
+    # - Quais variáveis são mais correlacionadas?
+    # - Quais gêneros dominam o Spotify?
+    # - Como é a distribuição da duração das faixas?
+    # - Quais são as faixas mais populares e suas características?
+    # """)
 
 def pagina_analise_univariada(df):
     st.subheader("🔬 Análise Univariada Detalhada")

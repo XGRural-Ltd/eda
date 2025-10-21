@@ -12,7 +12,7 @@ dash.register_page(__name__, path='/predicao', name='8. Atribuição de Cluster'
 # These are the features the original model expected. We'll use them for the input form.
 # Source: selected_features.pkl
 features_for_input = [
-    'duration_ms', 'explicit', 'danceability', 'energy', 'key', 'loudness', 'mode', 
+    'popularity', 'duration_ms', 'explicit', 'danceability', 'energy', 'key', 'loudness', 'mode', 
     'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo', 'time_signature'
 ]
 

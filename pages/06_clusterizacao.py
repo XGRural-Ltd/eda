@@ -24,7 +24,29 @@ layout = dbc.Container([
         ], width=12)
     ], className="my-4"),
 
-    dbc.Card(dbc.CardBody(id='cluster-controls-div')),
+    # --- Container for all possible algorithm controls ---
+    html.Div([
+        # K-Means Controls (initially visible)
+        html.Div([
+            html.Label("Número de clusters (k):"),
+            dcc.Slider(2, 20, 1, value=8, id='kmeans-k-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
+        ], id='kmeans-controls-div', style={'display': 'block'}),
+
+        # DBSCAN Controls (initially hidden)
+        html.Div([
+            html.Label("Epsilon (eps - raio da vizinhança):"),
+            dcc.Slider(0.1, 5.0, 0.1, value=1.5, id='dbscan-eps-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True}),
+            html.Label("Número Mínimo de Amostras (min_samples):", className="mt-3"),
+            dcc.Slider(1, 50, 1, value=10, id='dbscan-minsamples-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
+        ], id='dbscan-controls-div', style={'display': 'none'}),
+
+        # Agglomerative Clustering Controls (initially hidden)
+        html.Div([
+            html.Label("Número de clusters:"),
+            dcc.Slider(2, 20, 1, value=8, id='agg-n-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
+        ], id='agg-controls-div', style={'display': 'none'}),
+    ]),
+
 
     dbc.Row([
         dbc.Col([
@@ -39,28 +61,16 @@ layout = dbc.Container([
 
 # Callback to dynamically generate controls based on algorithm choice
 @callback(
-    Output('cluster-controls-div', 'children'),
+    Output('kmeans-controls-div', 'style'),
+    Output('dbscan-controls-div', 'style'),
+    Output('agg-controls-div', 'style'),
     Input('cluster-algo-dropdown', 'value')
 )
 def render_cluster_controls(algo_choice):
-    if algo_choice == "K-Means":
-        return [
-            html.Label("Número de clusters (k):"),
-            dcc.Slider(2, 20, 1, value=8, id='kmeans-k-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
-        ]
-    elif algo_choice == "DBSCAN":
-        return [
-            html.Label("Epsilon (eps - raio da vizinhança):"),
-            dcc.Slider(0.1, 5.0, 0.1, value=1.5, id='dbscan-eps-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True}),
-            html.Label("Número Mínimo de Amostras (min_samples):", className="mt-3"),
-            dcc.Slider(1, 50, 1, value=10, id='dbscan-minsamples-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
-        ]
-    elif algo_choice == "Clustering Aglomerativo":
-        return [
-            html.Label("Número de clusters:"),
-            dcc.Slider(2, 20, 1, value=8, id='agg-n-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
-        ]
-    return []
+    kmeans_style = {'display': 'block'} if algo_choice == "K-Means" else {'display': 'none'}
+    dbscan_style = {'display': 'block'} if algo_choice == "DBSCAN" else {'display': 'none'}
+    agg_style = {'display': 'block'} if algo_choice == "Clustering Aglomerativo" else {'display': 'none'}
+    return kmeans_style, dbscan_style, agg_style
 
 # Callback to run the clustering algorithm
 @callback(

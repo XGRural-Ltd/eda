@@ -33,10 +33,19 @@ layout = dbc.Container([
         dbc.Col([
             html.Hr(),
             dbc.Button("Salvar Dados do PCA para Próximas Etapas", id='save-pca-df-button', color="primary", n_clicks=0),
-            dbc.Alert(id='save-pca-status-alert', is_open=False, duration=4000, color="success")
         ], width=12, className="mt-4 text-center")
-    ]),
+    ], className="mb-4"),
     
+    # Toast for save confirmation
+    dbc.Toast(
+        id="save-pca-toast",
+        header="Sucesso!",
+        icon="success",
+        duration=4000,
+        is_open=False,
+        style={"position": "fixed", "top": 66, "right": 10, "width": 350, "zIndex": 9999},
+    ),
+
     # Hidden storage for PCA results
     html.Div(id='pca-df-json-storage', style={'display': 'none'})
 ])
@@ -79,8 +88,8 @@ def perform_pca(processed_data, n_components):
 
 @callback(
     Output('pca-df-store', 'data'),
-    Output('save-pca-status-alert', 'is_open'),
-    Output('save-pca-status-alert', 'children'),
+    Output('save-pca-toast', 'is_open'),
+    Output('save-pca-toast', 'children'),
     Input('save-pca-df-button', 'n_clicks'),
     State('pca-df-json-storage', 'children')
 )

@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, callback, Input, Output
+from dash import html, dcc, callback, Input, Output, no_update
 import pandas as pd
 import plotly.express as px
 import dash_bootstrap_components as dbc

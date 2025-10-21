@@ -53,7 +53,7 @@ def populate_corr_dropdown(json_data):
     Input('corr-threshold-slider', 'value')
 )
 def update_correlation_analysis(json_data, selected_genre, corr_method, corr_threshold):
-    if not all([json_data, selected_genre, corr_method]):
+    if not all([json_data, corr_method]) or selected_genre is None:
         return go.Figure(layout={'title': 'Selecione as opções para gerar o gráfico'}), "Selecione as opções"
 
     df = pd.read_json(StringIO(json_data), orient='split')

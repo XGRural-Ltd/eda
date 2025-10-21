@@ -9,6 +9,18 @@ from io import StringIO
 
 dash.register_page(__name__, path='/univariada', name='2. Análise Univariada')
 
+# --- Data Dictionaries ---
+col_descriptions = {
+    "popularity": "Popularidade da faixa (0 a 100), baseada em número e recência de reproduções.",
+    "duration_ms": "Duração da faixa em milissegundos.",
+    "explicit": "Indica se a faixa possui conteúdo explícito (True = sim, False = não).",
+    "danceability": "Quão dançante é a faixa, de 0.0 (menos) a 1.0 (mais dançante).",
+    "energy": "Energia percebida da faixa, de 0.0 a 1.0.",
+    "loudness": "Volume geral da faixa em decibéis (dB).",
+    "valence": "Quão positiva é a música (0.0 = triste, 1.0 = alegre).",
+    "tempo": "Tempo estimado da faixa (batidas por minuto)."
+}
+
 # --- Layout ---
 layout = dbc.Container([
     html.H3("🔬 Análise Univariada Detalhada"),
@@ -39,7 +51,7 @@ layout = dbc.Container([
     dbc.Row([
         dbc.Col(dbc.Spinner(dcc.Graph(id='univar-hist-chart')), width=6),
         dbc.Col(dbc.Spinner(dcc.Graph(id='univar-box-chart')), width=6)
-    ]),
+    ], className="mb-4"),
 
     html.Hr(),
     html.H4("Estatísticas e Detecção de Outliers", className="mt-4"),

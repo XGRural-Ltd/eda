@@ -39,9 +39,18 @@ layout = dbc.Container([
         dbc.Col([
             html.Hr(),
             dbc.Button("Salvar DataFrame Processado para Próximas Etapas", id='save-processed-df-button', color="primary", n_clicks=0),
-            dbc.Alert(id='save-status-alert', is_open=False, duration=4000, color="success")
         ], width=12, className="mt-4 text-center")
-    ]),
+    ], className="mb-4"), # Added margin-bottom to create space
+
+    # Toast for save confirmation
+    dbc.Toast(
+        id="save-confirmation-toast",
+        header="Sucesso!",
+        icon="success",
+        duration=4000,
+        is_open=False,
+        style={"position": "fixed", "top": 66, "right": 10, "width": 350, "zIndex": 9999},
+    ),
 
     # Hidden div to store the processed dataframe as JSON before saving to dcc.Store
     html.Div(id='processed-df-json-storage', style={'display': 'none'})
@@ -95,14 +104,13 @@ def run_preprocessing(json_data, features_to_scale):
 # Callback to save the processed data to the global store on button click
 @callback(
     Output('processed-df-store', 'data'),
-    Output('save-status-alert', 'is_open'),
-    Output('save-status-alert', 'children'),
+    Output('save-confirmation-toast', 'is_open'),
+    Output('save-confirmation-toast', 'children'),
     Input('save-processed-df-button', 'n_clicks'),
     State('processed-df-json-storage', 'children')
 )
 def save_processed_data(n_clicks, processed_json):
     if n_clicks > 0 and processed_json:
-        # The data is already in JSON format, just pass it through
         data_to_store = json.loads(processed_json)
-        return data_to_store, True, "DataFrame processado salvo com sucesso! ✅"
+        return data_to_store, True, "DataFrame processado e salvo com sucesso! ✅"
     return no_update, False, ""

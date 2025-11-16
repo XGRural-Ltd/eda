@@ -58,7 +58,7 @@ layout = dbc.Container([
     ),
 
     # Stores
-    dcc.Store(id='pca-df-store'),
+    html.Div(id='pca-df-json-storage', style={'display': 'none'})
 ], fluid=True)
 
 def _json_to_df(obj):
@@ -171,8 +171,8 @@ def perform_pca(n_clicks, processed_data, main_data, features, n_components):
     )
 
     pca_df = pd.DataFrame(comps, index=X.index, columns=[f"PC{i+1}" for i in range(comps.shape[1])])
-    pca_json = pca_df.to_json(date_format='iso', orient='split')
-    return var_fig, table, "", pca_json
+    pca_dict = pca_df.to_dict(orient='split')
+    return var_fig, table, "", pca_dict
 
 # Toast de salvar: usa o botão correto e só LÊ do Store
 @callback(

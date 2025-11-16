@@ -4,6 +4,7 @@ import pandas as pd
 import dash_bootstrap_components as dbc
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 import json
+from io import StringIO
 
 dash.register_page(__name__, path='/clusterizacao', name='6. Clusterização')
 

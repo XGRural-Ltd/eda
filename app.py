@@ -5,6 +5,8 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Dash, Input, Output, State
 import threading
+from io import StringIO
+import json
 
 # --- 1. LOAD DATA ONCE WHEN THE APP STARTS ---
 def load_initial_data():

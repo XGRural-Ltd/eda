@@ -32,7 +32,7 @@ layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
-            html.H4("Visualização dos Clusters (em 2D)", className="text-center"),
+            html.H4("Visualização dos Clusters", className="text-center"),
             dbc.Spinner(dcc.Graph(id='cluster-scatter-plot', style={'height': '70vh'}))
         ])
     ])
@@ -77,12 +77,13 @@ def visualize_clusters(labels, pca_data):
 
     df_pca = pd.DataFrame(**pca_data)
     
-    # Ensure labels are a categorical type for better plotting
-    df_pca['cluster'] = pd.Series(labels, dtype='category')
-    
-    fig = px.scatter(
-        df_pca, x='PC_1', y='PC_2', color='cluster',
-        title="Visualização dos Clusters Encontrados",
-        labels={'PC_1': 'Componente Principal 1', 'PC_2': 'Componente Principal 2'}
+    # Ensure labels are a string type for discrete coloring in plots
+    df_pca['cluster'] = pd.Series(labels).astype(str)
+
+    fig = px.scatter_3d(
+        df_pca, x='PC1', y='PC2', z='PC3',
+        color='cluster',
+        title="Visualização 3D dos Clusters",
+        labels={'PC1': 'Componente Principal 1', 'PC2': 'Componente Principal 2', 'PC3': 'Componente Principal 3'}
     )
     return fig, ""

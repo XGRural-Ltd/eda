@@ -2,8 +2,10 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html, dcc, callback, Input, Output, State, no_update, dash_table
 import pandas as pd, numpy as np, plotly.express as px
-from io import StringIO
+from io import StringIO, BytesIO
 import json
+import joblib
+import base64
 
 dash.register_page(__name__, path='/reducao', name='5. Redução de Dimensionalidade')
 
@@ -110,7 +112,10 @@ def populate_pca_features(proc_json, main_json):
     Output('pca-variance-graph', 'figure'),
     Output('pca-result-table', 'children'),
     Output('pca-warning-div', 'children'),
-    Output('pca-df-store', 'data'),   # apenas este callback escreve no Store
+    Output('pca-df-store', 'data'),
+    Output('pca-model-store', 'data'),
+    Output('scaler-store', 'data'),
+    Output('pca-features-store', 'data'),
     Input('pca-run-btn', 'n_clicks'),
     State('processed-df-store', 'data'),
     State('main-df-store', 'data'),
@@ -121,32 +126,46 @@ def populate_pca_features(proc_json, main_json):
 def perform_pca(n_clicks, processed_data, main_data, features, n_components):
     import plotly.graph_objects as go
     empty = go.Figure(layout={"title": "Selecione features e execute o PCA"})
+    no_update_list = [no_update] * 4 # For models and features
 
     df = _choose_df(processed_data, main_data)
     if df is None or df.empty or not features:
-        return empty, "", "Dados ou features inválidos.", no_update
+        return empty, "", "Dados ou features inválidos.", *no_update_list
 
     feats = [c for c in (features or []) if c in df.columns]
     if not feats:
-        return empty, "", "Nenhuma feature válida para PCA.", no_update
+        return empty, "", "Nenhuma feature válida para PCA.", *no_update_list
 
     X = df[feats].select_dtypes(include=np.number).dropna()
     if X.empty:
-        return empty, "", "As features selecionadas não são numéricas ou estão vazias.", no_update
+        return empty, "", "As features selecionadas não são numéricas ou estão vazias.", *no_update_list
 
     from sklearn.preprocessing import StandardScaler
     from sklearn.decomposition import PCA
-    Xs = StandardScaler().fit_transform(X.astype(float))
+    
+    scaler = StandardScaler()
+    Xs = scaler.fit_transform(X.astype(float))
 
     n_comp = int(n_components or 2)
     n_comp = max(2, min(n_comp, Xs.shape[1]))
     pca = PCA(n_components=n_comp)
     comps = pca.fit_transform(Xs)
 
-    components_labels = [f"PC{i+1}" for i in range(len(pca.explained_variance_ratio_))]
+    # --- Define variables for graph and table ---
     ratio = pca.explained_variance_ratio_
     cum_ratio = np.cumsum(ratio)
+    components_labels = [f"PC{i+1}" for i in range(n_comp)]
 
+    # --- Serialize and save models and features ---
+    def serialize_model(model):
+        mem_buffer = BytesIO()
+        joblib.dump(model, mem_buffer)
+        mem_buffer.seek(0)
+        return base64.b64encode(mem_buffer.read()).decode('utf-8')
+
+    b64_pca_model = serialize_model(pca)
+    b64_scaler_model = serialize_model(scaler)
+    
     # Gráfico: barras (variância) + linha (acumulada)
     var_fig = go.Figure()
     var_fig.add_bar(x=components_labels, y=ratio, name="Variância explicada")
@@ -172,7 +191,7 @@ def perform_pca(n_clicks, processed_data, main_data, features, n_components):
 
     pca_df = pd.DataFrame(comps, index=X.index, columns=[f"PC{i+1}" for i in range(comps.shape[1])])
     pca_dict = pca_df.to_dict(orient='split')
-    return var_fig, table, "", pca_dict
+    return var_fig, table, "", pca_dict, b64_pca_model, b64_scaler_model, feats
 
 # Toast de salvar: usa o botão correto e só LÊ do Store
 @callback(
@@ -180,10 +199,17 @@ def perform_pca(n_clicks, processed_data, main_data, features, n_components):
     Output('save-pca-toast', 'children'),
     Input('save-pca-df-button', 'n_clicks'),
     State('pca-df-store', 'data'),
+    State('pca-model-store', 'data'),
     prevent_initial_call=True
 )
-def save_pca(n, pca_json):
+def save_pca(n, pca_json, pca_model_b64):
     if not n:
         return False, ""
-    msg = "PCA salvo em cache." if pca_json else "Nenhum PCA para salvar."
+    
+    # Check if both data and the model were generated before confirming
+    if pca_json and pca_model_b64:
+        msg = "Dados e modelos do PCA foram salvos com sucesso!"
+    else:
+        msg = "Nenhum resultado de PCA para salvar. Execute o PCA primeiro."
+        
     return True, msg

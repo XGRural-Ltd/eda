@@ -80,6 +80,11 @@ app.layout = dbc.Container([
     dcc.Store(id='processed-df-store', storage_type='memory'),
     dcc.Store(id='pca-df-store', storage_type='memory'),
     dcc.Store(id='cluster-labels-store', storage_type='memory'),
+    dcc.Store(id='prediction-model-store'),
+    dcc.Store(id='pca-model-store'),
+    dcc.Store(id='scaler-store'),
+    dcc.Store(id='pca-features-store'),
+    dcc.Store(id='sampled-pca-df-store'),
     dcc.Location(id='url', refresh=False),
 
     dbc.Row([

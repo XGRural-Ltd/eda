@@ -1,40 +1,15 @@
 import dash
-from dash import html, dcc, callback, Input, Output, State, no_update
+from dash import html, dcc, callback, Input, Output, State, no_update, ALL
 import pandas as pd
 import dash_bootstrap_components as dbc
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans # Keep for type hints, but not used directly
 import numpy as np
-from io import StringIO
+from io import StringIO, BytesIO
+import joblib
+import base64
 
 dash.register_page(__name__, path='/predicao', name='8. Atribuição de Cluster')
-
-# This list should match the core numerical features used for PCA/Clustering
-features_for_input = [
-    'popularity', 'duration_s', 'danceability', 'energy', 'loudness', 
-    'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo'
-]
-
-def create_input_form():
-    """Helper function to create the new song input form."""
-    form_elements = []
-    for feature in features_for_input:
-        # Simple heuristic for sliders vs. number inputs
-        if feature in ['danceability', 'energy', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'mode', 'explicit']:
-            step = 0.01
-            max_val = 1.0
-        else:
-            step = 1
-            max_val = 250 if feature == 'tempo' else 500000
-
-        form_elements.append(
-            dbc.Row([
-                dbc.Col(html.Label(feature.replace('_', ' ').capitalize()), width=4),
-                dbc.Col(dcc.Input(id=f'pred-input-{feature}', type='number', placeholder=f'Enter {feature}...', step=step, style={'width': '100%'} ), width=8)
-            ], className="mb-2")
-        )
-    return form_elements
 
 # --- Layout ---
 layout = dbc.Container([
@@ -48,8 +23,9 @@ layout = dbc.Container([
         dbc.Tab(label="Atribuir Nova Música", children=[
             dbc.Card(dbc.CardBody([
                 html.H5("Insira as Características da Nova Música"),
-                html.P("Preencha os campos abaixo e clique em 'Prever Cluster'."),
-                *create_input_form(),
+                html.P("Preencha os campos abaixo. As features são baseadas na sua seleção para o PCA."),
+                # This container will be filled dynamically
+                dbc.Spinner(html.Div(id='prediction-form-container')),
                 dbc.Button("Prever Cluster para Nova Música", id='predict-new-button', color="primary", n_clicks=0, className="mt-3 w-100"),
             ]), className="mt-3")
         ]),
@@ -62,66 +38,78 @@ layout = dbc.Container([
     ])
 ])
 
-# --- Callback ---
+# --- Callbacks ---
+
+# Callback 1: Dynamically generate the input form
+@callback(
+    Output('prediction-form-container', 'children'),
+    Input('pca-features-store', 'data')
+)
+def generate_prediction_form(features):
+    if not features:
+        return dbc.Alert("Execute o PCA na página 'Redução de Dimensionalidade' primeiro para definir as features.", color="info")
+    
+    form_elements = []
+    for feature in features:
+        form_elements.append(
+            dbc.Row([
+                dbc.Col(html.Label(feature.replace('_', ' ').capitalize()), width=4),
+                dbc.Col(dcc.Input(
+                    # Use pattern-matching IDs
+                    id={'type': 'pred-input', 'feature': feature},
+                    type='number',
+                    placeholder=f'Enter {feature}...',
+                    step=0.01 if feature != 'tempo' and feature != 'popularity' else 1,
+                    style={'width': '100%'}
+                ), width=8)
+            ], className="mb-2")
+        )
+    return form_elements
+
+# Callback 2: Perform the prediction
 @callback(
     Output('prediction-result-div', 'children'),
     Output('pred-warning-div', 'children'),
     Input('predict-new-button', 'n_clicks'),
-    [State(f'pred-input-{f}', 'value') for f in features_for_input],
-    State('processed-df-store', 'data'),
-    State('cluster-labels-store', 'data'),
-    State('main-df-store', 'data')
+    # Use pattern-matching to get values and IDs from the dynamic form
+    State({'type': 'pred-input', 'feature': ALL}, 'value'),
+    State({'type': 'pred-input', 'feature': ALL}, 'id'),
+    State('scaler-store', 'data'),
+    State('pca-model-store', 'data'),
+    State('prediction-model-store', 'data'),
+    prevent_initial_call=True
 )
-def assign_to_cluster(n_clicks, *args):
-    if n_clicks == 0:
-        return "", ""
-
-    # Unpack the arguments manually
-    # The number of features is now 11
-    feature_values = args[:11]
-    # The last 3 args are the data stores
-    processed_data = args[11]
-    labels = args[12]
-    main_df_data = args[13]
-
-    if not all([processed_data, labels, main_df_data]):
-        alert = dbc.Alert("Dados necessários (processados, clusters) não encontrados. Execute os passos anteriores.", color="warning")
+def assign_to_cluster(n_clicks, feature_values, feature_ids, b64_scaler_model, b64_pca_model, b64_predictor_model):
+    if not all([b64_scaler_model, b64_pca_model, b64_predictor_model]):
+        alert = dbc.Alert("Modelos necessários (Scaler, PCA, Cluster) não encontrados. Execute os passos anteriores.", color="warning")
         return "", alert
 
-    # --- 0. Validate user inputs ---
     if any(v is None for v in feature_values):
         alert = dbc.Alert("Por favor, preencha todos os campos de características da música.", color="danger")
         return "", alert
 
     # --- 1. Recreate the new song DataFrame from user inputs ---
-    # Create a dictionary mapping feature names to their input values
-    input_data = {feature: value for feature, value in zip(features_for_input, feature_values)}
+    feature_names = [item['feature'] for item in feature_ids]
+    input_data = {name: value for name, value in zip(feature_names, feature_values)}
     new_song_df = pd.DataFrame([input_data])
 
-    # --- 2. Align columns with the original processed data ---
-    df_processed = pd.read_json(StringIO(processed_data), orient='split')
-    
-    # --- 3. Apply the same preprocessing steps ---
-    # Re-fit the scaler ONLY on the numeric features from the processed data
-    scaler = StandardScaler().fit(df_processed[features_for_input])
-    
-    # Transform the new song data (it already has the correct columns from the input form)
-    new_song_scaled = scaler.transform(new_song_df)
+    # --- 2. Deserialize all models ---
+    def deserialize_model(b64_model):
+        decoded_model = base64.b64decode(b64_model)
+        mem_buffer = BytesIO(decoded_model)
+        return joblib.load(mem_buffer)
 
-    # --- 4. Predict the cluster by finding the closest centroid ---
-    # Add original labels to the processed data to calculate centroids
-    df_processed['cluster'] = labels
+    scaler_model = deserialize_model(b64_scaler_model)
+    pca_model = deserialize_model(b64_pca_model)
+    predictor_model = deserialize_model(b64_predictor_model)
+
+    # --- 3. Apply the FULL transformation pipeline ---
+    new_song_scaled = scaler_model.transform(new_song_df)
+    new_song_pca = pca_model.transform(new_song_scaled)
     
-    # Calculate the mean of each feature for each cluster to find the centroids
-    # IMPORTANT: Calculate centroids only on the numeric features
-    centroids = df_processed.groupby('cluster')[features_for_input].mean()
-    
-    # Calculate the distance from the new song to each centroid
-    # new_song_scaled is a 2D array with one row, so we take the first row [0]
-    distances = np.linalg.norm(centroids.values - new_song_scaled[0], axis=1)
-    
-    # The predicted cluster is the index of the minimum distance
-    predicted_cluster = centroids.index[np.argmin(distances)]
+    # --- 4. Predict ---
+    predicted_cluster_array = predictor_model.predict(new_song_pca)
+    predicted_cluster = predicted_cluster_array[0]
 
     result_card = dbc.Card(
         dbc.CardBody([

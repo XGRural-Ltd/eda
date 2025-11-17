@@ -43,20 +43,29 @@ layout = dbc.Container([
     Output('cluster-metrics-div', 'children'),
     Input('calculate-metrics-checklist', 'value'),
     Input('cluster-labels-store', 'data'),
-    Input('pca-df-store', 'data'),
+    Input('sampled-pca-df-store', 'data'),
 )
 def calculate_metrics(checklist_value, labels, pca_data):
     if not checklist_value or not labels or not pca_data:
         return ""
 
     X_data = pd.DataFrame(**pca_data)
+    labels = pd.Series(labels) # Convert to series for easier filtering
     
-    if len(set(labels)) <= 1:
-        return dbc.Alert("São necessários pelo menos 2 clusters para calcular as métricas.", color="warning")
+    # Filter out noise points (label -1) from DBSCAN before calculating metrics
+    mask = labels != -1
+    if mask.sum() == 0: # All points are noise
+        return dbc.Alert("Não foram encontrados clusters (apenas ruído). As métricas não podem ser calculadas.", color="info")
+
+    X_filtered = X_data[mask]
+    labels_filtered = labels[mask]
+    
+    if len(set(labels_filtered)) <= 1:
+        return dbc.Alert("São necessários pelo menos 2 clusters (sem contar ruído) para calcular as métricas.", color="warning")
 
     try:
-        silhouette = silhouette_score(X_data, labels)
-        davies = davies_bouldin_score(X_data, labels)
+        silhouette = silhouette_score(X_filtered, labels_filtered)
+        davies = davies_bouldin_score(X_filtered, labels_filtered)
         return [
             html.P(f"**Silhouette Score:** {silhouette:.3f} (Quanto mais perto de 1, melhor)"),
             html.P(f"**Davies-Bouldin Score:** {davies:.3f} (Quanto mais perto de 0, melhor)")
@@ -68,7 +77,7 @@ def calculate_metrics(checklist_value, labels, pca_data):
     Output('cluster-scatter-plot', 'figure'),
     Output('eval-warning-div', 'children'),
     Input('cluster-labels-store', 'data'),
-    Input('pca-df-store', 'data')
+    Input('sampled-pca-df-store', 'data')
 )
 def visualize_clusters(labels, pca_data):
     if labels is None or pca_data is None:

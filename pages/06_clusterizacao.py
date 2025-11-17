@@ -3,8 +3,10 @@ from dash import html, dcc, callback, Input, Output, State, no_update
 import pandas as pd
 import dash_bootstrap_components as dbc
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-import json
-from io import StringIO
+from sklearn.neighbors import KNeighborsClassifier
+import joblib
+import io
+import base64
 
 dash.register_page(__name__, path='/clusterizacao', name='6. Clusterização')
 
@@ -76,6 +78,8 @@ def render_cluster_controls(algo_choice):
 # Callback to run the clustering algorithm
 @callback(
     Output('cluster-labels-store', 'data'),
+    Output('prediction-model-store', 'data'),
+    Output('sampled-pca-df-store', 'data'),
     Output('cluster-status-div', 'children'),
     Output('cluster-warning-div', 'children'),
     Input('run-cluster-button', 'n_clicks'),
@@ -93,10 +97,20 @@ def render_cluster_controls(algo_choice):
 def run_clustering(n_clicks, pca_data, algo, k, eps, min_samples, n_agg):
     if pca_data is None:
         alert = dbc.Alert("Execute a Redução de Dimensionalidade primeiro e salve os dados.", color="warning")
-        return no_update, "", alert
+        return no_update, no_update, no_update, "", alert
 
     X_data = pd.DataFrame(**pca_data)
     model = None
+    predictor_model = None
+    
+    # --- Sampling for expensive algorithms ---
+    SAMPLE_SIZE = 10000
+    data_to_cluster = X_data
+    sampling_info = ""
+    
+    if algo in ["DBSCAN", "Clustering Aglomerativo"] and len(X_data) > SAMPLE_SIZE:
+        data_to_cluster = X_data.sample(n=SAMPLE_SIZE, random_state=42)
+        sampling_info = f" (usando uma amostra de {SAMPLE_SIZE} pontos)"
 
     if algo == "K-Means":
         model = KMeans(n_clusters=k, random_state=42, n_init=10)
@@ -106,14 +120,32 @@ def run_clustering(n_clicks, pca_data, algo, k, eps, min_samples, n_agg):
         model = AgglomerativeClustering(n_clusters=n_agg)
 
     if model:
-        labels = model.fit_predict(X_data)
+        labels = model.fit_predict(data_to_cluster)
+        
+        # --- Create a suitable prediction model ---
+        if algo == "K-Means":
+            predictor_model = model # K-Means can predict directly
+        else:
+            # For other types, train a KNN to learn the cluster assignments
+            predictor_model = KNeighborsClassifier(n_neighbors=5)
+            predictor_model.fit(data_to_cluster, labels)
+
+        # Serialize the predictor model to a base64 string to store it
+        mem_buffer = io.BytesIO()
+        joblib.dump(predictor_model, mem_buffer)
+        mem_buffer.seek(0)
+        base64_model = base64.b64encode(mem_buffer.read()).decode('utf-8')
         
         n_clusters_found = len(set(labels)) - (1 if -1 in labels else 0)
         noise_points = sum(labels == -1) if -1 in labels else 0
 
-        status_msg = f"Clusterização com {algo} concluída! Clusters encontrados: {n_clusters_found}. Pontos de ruído: {noise_points}."
-        status_alert = dbc.Alert(status_msg, color="success")
+        status_msg = f"Clusterização com {algo} concluída{sampling_info}! Clusters: {n_clusters_found}. Ruído: {noise_points}."
+        # Add duration to make the alert disappear after 7 seconds
+        status_alert = dbc.Alert(status_msg, color="success", duration=7000)
         
-        return labels.tolist(), status_alert, ""
+        # Store the data that was actually clustered (sampled or full)
+        clustered_data_dict = data_to_cluster.to_dict(orient='split')
+
+        return labels.tolist(), base64_model, clustered_data_dict, status_alert, ""
     
-    return no_update, "Erro: Algoritmo não selecionado.", ""
+    return no_update, no_update, no_update, no_update, "Erro: Algoritmo não selecionado."

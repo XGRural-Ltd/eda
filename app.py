@@ -88,7 +88,7 @@ app.layout = dbc.Container([
     dcc.Location(id='url', refresh=False),
 
     dbc.Row([
-        html.H1("Spotify Tracks EDA with Dash", className="my-4 text-center"),
+        html.H1("Spotify Tracks EDA", className="my-4 text-center"),
         html.Hr(),
     ]),
     dbc.Row([

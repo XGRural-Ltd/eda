@@ -29,7 +29,7 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 def pagina_visao_geral(df):
-    st.subheader("📊 Informações Gerais do Dataset")
+    st.subheader("Informações Gerais do Dataset")
     st.write("Nesta etapa vamos ficar mais familiarizados com os dados. Vamos explorar as colunas, tipos de dados, valores ausentes, estatísticas descritivas e visualizar alguns plots.")
 
     st.markdown("**Visualize o DataFrame com as colunas selecionadas:**")
@@ -47,11 +47,11 @@ def pagina_visao_geral(df):
     df = df.dropna(axis=0)
 
     st.markdown("---")
-    st.subheader("🧾 Dicionário de Dados: Descrição das Colunas")
+    st.subheader("Dicionário de Dados: Descrição das Colunas")
     st.table(pd.DataFrame.from_dict(col_descriptions, orient='index', columns=['Descrição']))
     
     st.markdown("---")
-    st.subheader("📈 Visualizações Gerais de Distribuição")
+    st.subheader("Visualizações Gerais de Distribuição")
     num_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
     selected_col = st.selectbox("Selecione uma coluna numérica:", num_cols)
     selected_col_name = cols_dict.get(selected_col)
@@ -86,7 +86,7 @@ def pagina_visao_geral(df):
         st.pyplot(fig)
 
     st.markdown("---")
-    st.subheader("📈 Gráficos de Dispersão entre Variáveis Numéricas")
+    st.subheader("Gráficos de Dispersão entre Variáveis Numéricas")
     x_axis = st.selectbox("Variável no eixo X:", num_features, index=0)
     y_axis = st.selectbox("Variável no eixo Y:", num_features, index=1)
     x_axis_name = cols_dict.get(x_axis)
@@ -108,22 +108,11 @@ def pagina_visao_geral(df):
     ax.set_title(f"Dispersão entre {x_axis_name} e {y_axis_name}")
     st.pyplot(fig)
 
-    # st.markdown("📌 Danceability vs. Energy \n"
-    #             "- Já esperamnos uma correlação positiva entre 'danceability' e 'energy', pois músicas mais dançantes tendem a ter mais energia.  \n"
-    #             "- A linha de tendência (regressão linear) ajuda a visualizar uma correlação moderadamente positiva. \n"
-    #             "\n" 
-    #             "📌 Acousticness vs. Energy \n"
-    #             "- Correlação negativa forte esperada, pois músicas acústicas são menos energéticas \n"
-    #             "- A linha de tendência decrescemte indica uma relação inversamente proporcional. \n"
-    #             "\n"
-    #             "📌 Loudness vs. Energy \n"
-    #             "- Baixa dispersão e ascendência dos pontos mostram uma correlação fortemente positiva (músicas energéticas costumam ser mais altas) \n")
-
 def pagina_analise_univariada(df):
-    st.subheader("🔬 Análise Univariada Detalhada")
+    st.subheader("Análise Univariada Detalhada")
     st.markdown("Explore a distribuição de cada variável. Use os filtros para comparar diferentes gêneros e ajuste os gráficos para uma análise mais profunda.")
 
-    st.markdown("### 🎭 Comparar Distribuições por Gênero")
+    st.markdown("### Comparar Distribuições por Gênero")
     genres = sorted(df['track_genre'].unique().tolist())
     genres_cap = [g.capitalize() for g in genres]
     genre_map = dict(zip(genres_cap, genres))
@@ -141,14 +130,14 @@ def pagina_analise_univariada(df):
         df_filtered = df.copy()
         hue_on = None
 
-    st.markdown("### ⚙️ Controles da Análise")
+    st.markdown("### Controles da Análise")
     selected_var = st.selectbox("Selecione uma variável numérica para análise:", num_features)
     if selected_var in col_descriptions:
         st.info(f"**Descrição:** {col_descriptions[selected_var]}")
 
     num_bins = st.slider("Número de Bins para o Histograma:", min_value=10, max_value=100, value=30)
     
-    st.markdown(f"---\n### 🎯 Análise da variável: `{selected_var}`")
+    st.markdown(f"---\n### Análise da variável: `{selected_var}`")
     st.markdown("**📊 Visualização da Distribuição:**")
     col1, col2 = st.columns(2)
     with col1:
@@ -168,7 +157,7 @@ def pagina_analise_univariada(df):
         ax2.set_title(f"Boxplot de {selected_var}")
         st.pyplot(fig2)
 
-    st.markdown(f"**🔎 Estatísticas e Outliers para `{selected_var}`**")
+    st.markdown(f"** Estatísticas e Outliers para `{selected_var}`**")
     if genres_to_compare:
         st.write("Estatísticas descritivas por gênero selecionado:")
         st.write(df_filtered.groupby('track_genre')[selected_var].describe().T)
@@ -191,7 +180,7 @@ def pagina_analise_univariada(df):
         st.dataframe(outliers[cols_to_show].sort_values(by=selected_var, ascending=False))
 
 def pagina_preprocessamento(df):
-    st.subheader("⚙️ 5. Pré-processamento dos Dados")
+    st.subheader("5. Pré-processamento dos Dados")
     st.markdown("""
     O pré-processamento é uma etapa fundamental na preparação de dados para modelos de Machine Learning. Aqui, transformaremos nossas features para que os algoritmos possam interpretá-las da melhor forma possível.
         1.  **Tratamento de Valores Ausentes**: Lidaremos com quaisquer valores faltantes em nossas features numéricas.
@@ -213,7 +202,7 @@ def pagina_preprocessamento(df):
         st.write(df_preprocessed[numeric_cols_with_na].isnull().sum().to_frame(name='NAs Preenchidos'))
         df_preprocessed.fillna(df_preprocessed.median(numeric_only=True), inplace=True)
     else:
-        st.success("Nenhum valor ausente encontrado nas colunas numéricas. ✅")
+        st.success("Nenhum valor ausente encontrado nas colunas numéricas.")
     
     st.markdown("---")
     st.markdown("### 2. Feature Scaling (Padronização)")
@@ -245,7 +234,7 @@ def pagina_preprocessamento(df):
             sns.histplot(df_preprocessed['danceability'], kde=True, ax=ax, color='green')
             ax.set_title("Padronizado")
             st.pyplot(fig)
-        st.success("Padronização concluída! ✅")
+        st.success("Padronização concluída!")
     else:
         st.warning("Por favor, selecione pelo menos uma feature para padronizar.")
         return
@@ -260,7 +249,7 @@ def pagina_preprocessamento(df):
     st.dataframe(df_preprocessed.head())
     st.write(f"O dataset final possui **{df_preprocessed.shape[0]}** linhas e **{df_preprocessed.shape[1]}** features.")
 
-    st.markdown("### 💾 Baixar Dados Processados")
+    st.markdown("### Baixar Dados Processados")
     st.markdown("Clique no botão para baixar o DataFrame processado em um arquivo CSV para uso posterior.")
 
     csv = convert_df_to_csv(df_preprocessed)
@@ -272,13 +261,13 @@ def pagina_preprocessamento(df):
     )
     if st.button("Salvar DataFrame em cache para próximas etapas"):
         st.session_state['df_preprocessed'] = df_preprocessed
-        st.success("DataFrame processado salvo na sessão! ✅")
+        st.success("DataFrame processado salvo na sessão!")
 
 def pagina_correlacao(df):
-    st.subheader("↔️ Análise de Correlação")
+    st.subheader("↔Análise de Correlação")
     st.markdown("Investigue a relação entre as variáveis. Use o filtro de gênero e o slider de intensidade para focar nas correlações mais importantes.")
     
-    st.markdown("### 🎵 Filtrar por Gênero")
+    st.markdown("### Filtrar por Gênero")
     genre_list = ['Todos'] + sorted(df['track_genre'].unique().tolist())
     corr_genre = st.selectbox("Selecione um gênero para calcular a correlação:", genre_list)
 
@@ -288,7 +277,7 @@ def pagina_correlacao(df):
         df_corr = df[df['track_genre'] == corr_genre][num_features]
         st.info(f"Mostrando correlações apenas para o gênero: **{corr_genre}**")
 
-    st.markdown("### ⚙️ Controles da matriz de correlação")
+    st.markdown("### Controles da matriz de correlação")
     corr_method = st.selectbox("Método de correlação:", ["pearson", "spearman", "kendall"])
     
     corr_threshold = st.slider("Ocultar no gráfico e na tabela correlações com valor absoluto abaixo de:", 0.0, 1.0, 0.0, 0.05)
@@ -305,7 +294,7 @@ def pagina_correlacao(df):
         ax.set_title(f"Matriz de correlação (Método: {corr_method.capitalize()}, Gênero: {corr_genre})", fontsize=16)
         st.pyplot(fig)
 
-        st.markdown("### ✨ Pares com Maior Correlação")
+        st.markdown("### Pares com Maior Correlação")
         st.write(f"Abaixo estão os pares de variáveis com correlação absoluta acima de **{corr_threshold}** (excluindo duplicatas e auto-correlações).")
         
         mask_table = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
@@ -323,7 +312,7 @@ def pagina_correlacao(df):
         st.warning(f"Não há dados suficientes para o gênero '{corr_genre}' para calcular a correlação.")
 
 def pagina_reducao_dimensionalidade(df):
-    st.subheader("📉 6. Redução de Dimensionalidade")
+    st.subheader("6. Redução de Dimensionalidade")
     st.markdown("""
     Com um grande número de features, pode ser difícil visualizar e modelar os dados. A **Redução de Dimensionalidade** nos ajuda a "comprimir" as informações mais importantes em um número menor de componentes. Usaremos a **Análise de Componentes Principais (PCA)**, uma técnica popular que encontra novas eixos (componentes) que maximizam a variância nos dados.
     """)
@@ -361,10 +350,10 @@ def pagina_reducao_dimensionalidade(df):
 
     if st.button("Salvar dados do PCA para próximas etapas"):
         st.session_state['df_pca'] = df_pca
-        st.success("Dados transformados pelo PCA salvos na sessão! ✅")
+        st.success("Dados transformados pelo PCA salvos na sessão!")
 
 def pagina_clusterizacao(df):
-    st.subheader("🧩 7. Clusterização")
+    st.subheader("7. Clusterização")
     st.markdown("""
     Agora que nossos dados estão preparados, vamos aplicar algoritmos de **clusterização** para encontrar grupos (clusters) de músicas com características semelhantes. O objetivo é descobrir "playlists" naturais escondidas nos dados.
     """)
@@ -374,7 +363,7 @@ def pagina_clusterizacao(df):
         return
     X_data = st.session_state['df_pca']
 
-    st.markdown("### 🤖 Escolha do Algoritmo de Clusterização")
+    st.markdown("### Escolha do Algoritmo de Clusterização")
     algo_choice = st.selectbox(
         "Selecione o algoritmo:",
         ["K-Means", "DBSCAN", "Clustering Aglomerativo"]
@@ -411,7 +400,7 @@ def pagina_clusterizacao(df):
                 st.write(f"Número de pontos de ruído (outliers): **{noise_points}**")
 
 def pagina_avaliacao_clusters(df):
-    st.subheader("🏆 8. Avaliação dos Clusters")
+    st.subheader("8. Avaliação dos Clusters")
     st.markdown("""
     Como saber se os clusters que encontramos são bons? Nesta etapa, vamos usar métricas quantitativas e visualizações para avaliar a qualidade dos nossos agrupamentos.
     """)
@@ -439,7 +428,7 @@ def pagina_avaliacao_clusters(df):
         else:
             st.warning("Não é possível calcular as métricas. Tente com mais clusters.")
 
-    st.markdown("### 📉 Visualização dos Clusters")
+    st.markdown("### Visualização dos Clusters")
     st.markdown("""
     Uma imagem vale mais que mil palavras. Vamos visualizar os clusters em um gráfico 2D. Para isso, usaremos as duas primeiras componentes principais obtidas na redução de dimensionalidade.
     """)

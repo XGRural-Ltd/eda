@@ -17,3 +17,21 @@
     color: #6f42c1 !important;
     font-weight: 600;
 }
+
+/* Sidebar fixo */
+.sidebar-fixed {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 300px;        /* largura do sidebar */
+    height: 100vh;
+    overflow-y: auto;    /* scroll interno se necessário */
+    padding: 20px;
+    z-index: 1000;
+}
+
+/* Conteúdo deslocado para direita */
+.content-area {
+    margin-left: 260px;  /* igual à largura do sidebar */
+    padding: 20px;
+}

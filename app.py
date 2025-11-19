@@ -99,10 +99,15 @@ app.layout = dbc.Container([
     dcc.Store(id='pca-features-store'),
     dcc.Store(id='sampled-pca-df-store'),
     dcc.Location(id='url', refresh=False),
-    dbc.Row([
-        dbc.Col([sidebar], xs=4, sm=3, md=2),
-        dbc.Col(dash.page_container, xs=8, sm=9, md=10),
-    ]),
+    html.Div(
+        sidebar,
+        className="sidebar-fixed"
+    ),
+
+    # --- ÁREA DE CONTEÚDO (rolável) ---
+    html.Div(
+        dash.page_container
+    )
 ], fluid=True)
 
 # Do not overwrite cached main df once set (allow duplicate with initial_duplicate)

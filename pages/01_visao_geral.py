@@ -7,7 +7,7 @@ import numpy as np
 import plotly.graph_objects as go
 from io import StringIO
 
-dash.register_page(__name__, path='/', name='1. Visão Geral')
+dash.register_page(__name__, path='/', name='Visão Geral', order=1)
 
 # --- Data Dictionaries (from your original script) ---
 cols_dict = {

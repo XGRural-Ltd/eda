@@ -9,7 +9,7 @@ from io import StringIO, BytesIO
 import joblib
 import base64
 
-dash.register_page(__name__, path='/predicao', name='8. Atribuição de Cluster')
+dash.register_page(__name__, path='/predicao', name='Atribuição de Cluster', order=8)
 
 # --- Layout ---
 layout = dbc.Container([

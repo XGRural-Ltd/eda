@@ -6,7 +6,7 @@ import dash_bootstrap_components as dbc
 import numpy as np
 from io import StringIO
 
-dash.register_page(__name__, path='/correlacao', name='3. Correlação')
+dash.register_page(__name__, path='/correlacao', name='Correlação', order=3)
 
 # --- Layout ---
 layout = dbc.Container([

@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 from sklearn.decomposition import PCA
 
-dash.register_page(__name__, path='/preprocessamento', name='4. Pré-processamento')
+dash.register_page(__name__, path='/preprocessamento', name='Pré-processamento', order=4)
 
 # Defaults inspirados no notebook
 DEFAULT_NUM_FEATURES = [

@@ -7,7 +7,7 @@ import numpy as np
 import plotly.graph_objects as go
 from io import StringIO
 
-dash.register_page(__name__, path='/univariada', name='2. Análise Univariada')
+dash.register_page(__name__, path='/univariada', name='Análise Univariada', order = 2)
 
 # --- Labels (iguais ao Home.py) ---
 cols_dict = {

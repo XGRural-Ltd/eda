@@ -7,7 +7,7 @@ import json
 import joblib
 import base64
 
-dash.register_page(__name__, path='/reducao', name='5. Redução de Dimensionalidade')
+dash.register_page(__name__, path='/reducao', name='Redução de Dimensionalidade', order=5)
 
 DEFAULT_PCA_FEATURES = [
     'danceability', 'energy', 'loudness', 'acousticness', 'valence',

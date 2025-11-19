@@ -8,7 +8,7 @@ import joblib
 import io
 import base64
 
-dash.register_page(__name__, path='/clusterizacao', name='6. Clusterização')
+dash.register_page(__name__, path='/clusterizacao', name='Clusterização', order=6)
 
 # --- Layout ---
 layout = dbc.Container([

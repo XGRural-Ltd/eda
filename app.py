@@ -60,18 +60,31 @@ def _ensure_init():
                 _initialized = True
 
 # Sidebar (links para as páginas registradas)
-sidebar = dbc.Nav(
+sidebar = html.Div(
     [
-        dbc.NavLink(
-            html.Div(page["name"], className="ms-2"),
-            href=page["path"],
-            active="exact"
-        )
-        for page in sorted(dash.page_registry.values(), key=lambda p: p.get("name", ""))
+        html.Img(
+            src="/assets/logo.png",
+            style={
+                "height": "160px",
+                "margin": "0 auto",
+                "display": "block",
+                "padding": "20px 0"
+            }
+        ),
+        dbc.Nav(
+            [
+                dbc.NavLink(
+                    html.Div(page["name"], className="my-navlink"),
+                    href=page["path"],
+                    active="exact"
+                )
+                for page in dash.page_registry.values()
+            ],
+            vertical=True,
+            pills=True
+        ),
     ],
-    vertical=True,
-    pills=True,
-    className="bg-light p-2"
+    className="sidebar"
 )
 
 # --- Layout (ensure session storage to persist across pages/tabs) ---
@@ -86,13 +99,8 @@ app.layout = dbc.Container([
     dcc.Store(id='pca-features-store'),
     dcc.Store(id='sampled-pca-df-store'),
     dcc.Location(id='url', refresh=False),
-
     dbc.Row([
-        html.H1("Spotify Tracks EDA", className="my-4 text-center"),
-        html.Hr(),
-    ]),
-    dbc.Row([
-        dbc.Col([html.H4("Navegação"), sidebar], xs=4, sm=3, md=2),
+        dbc.Col([sidebar], xs=4, sm=3, md=2),
         dbc.Col(dash.page_container, xs=8, sm=9, md=10),
     ]),
 ], fluid=True)

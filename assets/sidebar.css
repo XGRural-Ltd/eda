@@ -1,0 +1,19 @@
+/* estilo normal dos itens */
+.my-navlink {
+    font-size: 18px;         /* AUMENTA a fonte */
+    padding: 12px 20px;      /* AUMENTA o espaço interno */
+    margin-bottom: 10px;     /* AUMENTA o espaço ENTRE os itens */
+    color: #ffffff !important;  /* branco */
+    transition: 0.2s;
+}
+
+/* hover opcional */
+.my-navlink:hover {
+    color: #6f42c1 !important;  /* roxo */
+}
+
+/* item selecionado */
+.my-navlink.active {
+    color: #6f42c1 !important;
+    font-weight: 600;
+}

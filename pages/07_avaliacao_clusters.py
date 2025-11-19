@@ -5,7 +5,7 @@ import plotly.express as px
 import dash_bootstrap_components as dbc
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 
-dash.register_page(__name__, path='/avaliacao', name='7. Avaliação dos Clusters')
+dash.register_page(__name__, path='/avaliacao', name='Avaliação dos Clusters', order=7)
 
 # --- Layout ---
 layout = dbc.Container([

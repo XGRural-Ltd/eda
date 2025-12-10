@@ -1,11 +1,12 @@
 import dash
 from dash import html, dcc, callback, Input, Output
+from src.constants import STORE_MAIN
+from src.utils import to_df
 import pandas as pd
-import plotly.express as px
-import dash_bootstrap_components as dbc
 import numpy as np
+import plotly.express as px
 import plotly.graph_objects as go
-from io import StringIO
+import dash_bootstrap_components as dbc
 
 dash.register_page(__name__, path='/univariada', name='Análise Univariada', order = 2)
 
@@ -87,12 +88,12 @@ layout = dbc.Container([
 @callback(
     Output('univar-genre-multiselect', 'options'),
     Output('univar-col-select', 'options'),
-    Input('main-df-store', 'data')
+    Input(STORE_MAIN, 'data')
 )
-def populate_univar_dropdowns(json_data):
-    if json_data is None:
-        return [], []
-    df = pd.read_json(StringIO(json_data), orient='split')
+def populate_univar_dropdowns(main_store):
+    df = to_df(main_store)
+    if df is None:
+        return [], [], []
 
     # Gêneros com label capitalizado (comportamento próximo do Home.py)
     if 'track_genre' in df.columns:
@@ -114,7 +115,7 @@ def populate_univar_dropdowns(json_data):
     Output('univar-outliers-table', 'children'),
     Output('univar-description-info', 'children'),
     Output('univar-description-info', 'is_open'),
-    Input('main-df-store', 'data'),
+    Input(STORE_MAIN, 'data'),
     Input('univar-genre-multiselect', 'value'),
     Input('univar-col-select', 'value'),
     Input('univar-bins-slider', 'value')
@@ -124,7 +125,7 @@ def update_univar_analysis(json_data, selected_genres, selected_var, num_bins):
     if not json_data or not selected_var:
         return empty_fig, empty_fig, "", "", "", False
 
-    df = pd.read_json(StringIO(json_data), orient='split')
+    df = to_df(json_data)
 
     # Filtro por gênero (igual à ideia do Home.py)
     if selected_genres:

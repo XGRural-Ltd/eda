@@ -1,28 +1,34 @@
 import dash
 from dash import html, dcc, callback, Input, Output, State, no_update
-import pandas as pd
 import dash_bootstrap_components as dbc
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from sklearn.neighbors import KNeighborsClassifier
-import joblib
-import io
-import base64
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from src.constants import STORE_PROCESSED, STORE_PCA, STORE_SAMPLED_PCA, STORE_CLUSTER_LABELS, STORE_PREDICTION_MODEL
+from src.utils import to_df
+from src.pipeline import run_clustering
 
 dash.register_page(__name__, path='/clusterizacao', name='Clusterização', order=6)
 
-# --- Layout ---
-layout = dbc.Container([
+# === ADD STORES AT PAGE TOP (before layout definition) ===
+layout = html.Div([
     html.H3("🧩 Clusterização"),
     dcc.Markdown("Aplique algoritmos de clusterização para encontrar grupos (clusters) de músicas com características semelhantes."),
     html.Div(id='cluster-warning-div'),
     
-    dbc.Row([
+    dbc.Row([ 
         dbc.Col([
             html.Label("Escolha o Algoritmo de Clusterização"),
-            dcc.Dropdown(
+            dbc.Select(
                 id='cluster-algo-dropdown',
-                options=["K-Means", "DBSCAN", "Clustering Aglomerativo"],
-                value="K-Means"
+                options=[
+                    {'label': 'K-Means', 'value': 'kmeans'},
+                    {'label': 'DBSCAN', 'value': 'dbscan'},
+                    {'label': 'Agglomerative Clustering', 'value': 'agglomerative'},
+                ],
+                value='kmeans',
+                className="mb-3"
             )
         ], width=12)
     ], className="my-4"),
@@ -32,7 +38,7 @@ layout = dbc.Container([
         # K-Means Controls (initially visible)
         html.Div([
             html.Label("Número de clusters (k):"),
-            dcc.Slider(2, 20, 1, value=8, id='kmeans-k-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
+            dcc.Slider(2, 20, 1, value=4, id='kmeans-k-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
         ], id='kmeans-controls-div', style={'display': 'block'}),
 
         # DBSCAN Controls (initially hidden)
@@ -50,13 +56,26 @@ layout = dbc.Container([
         ], id='agg-controls-div', style={'display': 'none'}),
     ]),
 
-
     dbc.Row([
         dbc.Col([
             html.Hr(),
             dbc.Button("Executar Clusterização", id='run-cluster-button', color="primary", n_clicks=0),
             html.Div(id='cluster-status-div', className="mt-3")
         ], width=12, className="mt-4 text-center")
+    ],),
+
+    # novo: gráfico de clusters (PC_1 x PC_2)
+    dbc.Row([
+        dbc.Col(dbc.Spinner(dcc.Graph(id='cluster-plot', figure=px.scatter(title="Clusters (PC_1 x PC_2)"))), width=12)
+    ],),
+
+    # Avaliação (mesma página) - botão para disparar avaliação leve (com amostragem)
+    dbc.Row([
+        dbc.Col(dbc.Button("Avaliar Clusters", id='run-eval-button', color="info", n_clicks=0), width=12, className="mt-3")
+    ]),
+    dbc.Row([
+        dbc.Col(dbc.Spinner(html.Div(id='cluster-eval-div-06')), width=6),  # RENOMEADO
+        dbc.Col(dbc.Spinner(dcc.Graph(id='cluster-eval-plot-06')), width=6)
     ]),
 ])
 
@@ -70,82 +89,179 @@ layout = dbc.Container([
     Input('cluster-algo-dropdown', 'value')
 )
 def render_cluster_controls(algo_choice):
-    kmeans_style = {'display': 'block'} if algo_choice == "K-Means" else {'display': 'none'}
-    dbscan_style = {'display': 'block'} if algo_choice == "DBSCAN" else {'display': 'none'}
-    agg_style = {'display': 'block'} if algo_choice == "Clustering Aglomerativo" else {'display': 'none'}
+    kmeans_style = {'display': 'block'} if algo_choice == "kmeans" else {'display': 'none'}
+    dbscan_style = {'display': 'block'} if algo_choice == "dbscan" else {'display': 'none'}
+    agg_style = {'display': 'block'} if algo_choice == "agglomerative" else {'display': 'none'}
     return kmeans_style, dbscan_style, agg_style
 
 # Callback to run the clustering algorithm
 @callback(
-    Output('cluster-labels-store', 'data'),
-    Output('prediction-model-store', 'data'),
-    Output('sampled-pca-df-store', 'data'),
+    Output(STORE_CLUSTER_LABELS, 'data'),
+    Output(STORE_PREDICTION_MODEL, 'data'),
     Output('cluster-status-div', 'children'),
     Output('cluster-warning-div', 'children'),
+    Output('cluster-plot', 'figure'),
     Input('run-cluster-button', 'n_clicks'),
     State('pca-df-store', 'data'),
     State('cluster-algo-dropdown', 'value'),
-    # K-Means states
     State('kmeans-k-slider', 'value'),
-    # DBSCAN states
     State('dbscan-eps-slider', 'value'),
     State('dbscan-minsamples-slider', 'value'),
-    # Agglomerative states
     State('agg-n-slider', 'value'),
     prevent_initial_call=True
 )
-def run_clustering(n_clicks, pca_data, algo, k, eps, min_samples, n_agg):
-    if pca_data is None:
-        alert = dbc.Alert("Execute a Redução de Dimensionalidade primeiro e salve os dados.", color="warning")
-        return no_update, no_update, no_update, "", alert
-
-    X_data = pd.DataFrame(**pca_data)
-    model = None
-    predictor_model = None
+def run_clustering_cb(n_clicks, pca_store, algo, k, eps, min_samples, agg_n):
+    df = to_df(pca_store)
+    if df is None or df.empty:
+        empty_fig = go.Figure(layout={"title": "Nenhum dado PCA disponível", "template": "plotly_dark"})
+        return no_update, no_update, dbc.Alert("Nenhum dado PCA disponível", color="warning"), no_update, empty_fig
     
-    # --- Sampling for expensive algorithms ---
-    SAMPLE_SIZE = 10000
-    data_to_cluster = X_data
-    sampling_info = ""
-    
-    if algo in ["DBSCAN", "Clustering Aglomerativo"] and len(X_data) > SAMPLE_SIZE:
-        data_to_cluster = X_data.sample(n=SAMPLE_SIZE, random_state=42)
-        sampling_info = f" (usando uma amostra de {SAMPLE_SIZE} pontos)"
-
-    if algo == "K-Means":
-        model = KMeans(n_clusters=k, random_state=42, n_init=10)
-    elif algo == "DBSCAN":
-        model = DBSCAN(eps=eps, min_samples=min_samples)
-    elif algo == "Clustering Aglomerativo":
-        model = AgglomerativeClustering(n_clusters=n_agg)
-
-    if model:
-        labels = model.fit_predict(data_to_cluster)
+    try:
+        print(f"[CLUSTER] Running {algo} with params: k={k}, eps={eps}, min_samples={min_samples}, agg_n={agg_n}")
+        out = run_clustering(pca_store, algo=algo, k=k, eps=eps, min_samples=min_samples, n_agg=agg_n)  # CORREÇÃO: agg_n -> n_agg
+        print(f"[CLUSTER] Clustering done: {out['n_clusters']} clusters")
         
-        # --- Create a suitable prediction model ---
-        if algo == "K-Means":
-            predictor_model = model # K-Means can predict directly
+        # Build plot
+        df_plot = df.copy()
+        df_plot['cluster'] = out['labels']
+        
+        if algo == 'dbscan':
+            # DBSCAN pode ter -1 (noise)
+            fig = px.scatter(df_plot, x=df_plot.columns[0], y=df_plot.columns[1], color='cluster', 
+                           title=f'Clusters ({algo.upper()}) - {out["n_clusters"]} clusters',
+                           template='plotly_dark')
         else:
-            # For other types, train a KNN to learn the cluster assignments
-            predictor_model = KNeighborsClassifier(n_neighbors=5)
-            predictor_model.fit(data_to_cluster, labels)
-
-        # Serialize the predictor model to a base64 string to store it
-        mem_buffer = io.BytesIO()
-        joblib.dump(predictor_model, mem_buffer)
-        mem_buffer.seek(0)
-        base64_model = base64.b64encode(mem_buffer.read()).decode('utf-8')
+            fig = px.scatter(df_plot, x=df_plot.columns[0], y=df_plot.columns[1], color='cluster', 
+                           title=f'Clusters ({algo.upper()}) - {out["n_clusters"]} clusters',
+                           template='plotly_dark')
         
-        n_clusters_found = len(set(labels)) - (1 if -1 in labels else 0)
-        noise_points = sum(labels == -1) if -1 in labels else 0
-
-        status_msg = f"Clusterização com {algo} concluída{sampling_info}! Clusters: {n_clusters_found}. Ruído: {noise_points}."
-        # Add duration to make the alert disappear after 7 seconds
-        status_alert = dbc.Alert(status_msg, color="success", duration=7000)
+        status = dbc.Alert(f"✓ Clusterização concluída: {out['n_clusters']} clusters encontrados", color="success")
+        warning = no_update
         
-        # Store the data that was actually clustered (sampled or full)
-        clustered_data_dict = data_to_cluster.to_dict(orient='split')
+        return out['labels'], out['model'], status, warning, fig
+        
+    except Exception as e:
+        empty_fig = go.Figure(layout={"title": "Erro na clusterização", "template": "plotly_dark"})
+        alert = dbc.Alert(f"Erro na clusterização: {type(e).__name__}: {e}", color="danger")
+        print(f"[CLUSTER] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return no_update, no_update, alert, no_update, empty_fig
 
-        return labels.tolist(), base64_model, clustered_data_dict, status_alert, ""
+# Novo callback para Elbow Method
+@callback(
+    Output('elbow-plot-div', 'children'),
+    Input('run-elbow-btn', 'n_clicks'),
+    State('pca-df-store', 'data'),
+    State('elbow-k-range', 'value'),
+    prevent_initial_call=True
+)
+def run_elbow_method(n_clicks, pca_store, k_range):
+    df = to_df(pca_store)
+    if df is None or df.empty:
+        return dbc.Alert("Nenhum dado PCA disponível para Elbow Method", color="warning")
     
-    return no_update, no_update, no_update, no_update, "Erro: Algoritmo não selecionado."
+    try:
+        X = df.values
+        inertias = []
+        k_values = list(range(k_range[0], k_range[1] + 1))
+        
+        from sklearn.cluster import KMeans
+        for k in k_values:
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            kmeans.fit(X)
+            inertias.append(kmeans.inertia_)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=k_values, y=inertias, mode='lines+markers', name='Inércia'))
+        fig.update_layout(
+            title='Método do Cotovelo (Elbow Method)',
+            xaxis_title='Número de clusters (k)',
+            yaxis_title='Inércia (Soma das distâncias quadráticas)',
+            template='plotly_dark'
+        )
+        
+        return dcc.Graph(figure=fig)
+    except Exception as e:
+        return dbc.Alert(f"Erro no Elbow Method: {type(e).__name__}: {e}", color="danger")
+
+# Restaurar callback de avaliação (usando dados consistentes)
+@callback(
+    Output('cluster-eval-div-06', 'children'),
+    Output('cluster-eval-plot-06', 'figure'),
+    Input('run-eval-button', 'n_clicks'),
+    State(STORE_CLUSTER_LABELS, 'data'),
+    State('pca-df-store', 'data'),  # Usar os mesmos dados da clusterização
+    State('cluster-algo-dropdown', 'value'),
+    prevent_initial_call=True
+)
+def evaluate_clusters(n_clicks, labels, pca_store, algo):
+    if not n_clicks or not labels or not pca_store:
+        empty_fig = go.Figure(layout={"title": "Avaliação não disponível", "template": "plotly_dark"})
+        return no_update, empty_fig
+    
+    try:
+        df = to_df(pca_store)
+        if df is None or df.empty:
+            return dbc.Alert("Dados PCA não disponíveis para avaliação", color="warning"), go.Figure()
+        
+        # CORREÇÃO: Amostragem consistente para manter correspondência entre df e labels
+        sample_size = min(3000, len(df))
+        sample_indices = np.random.RandomState(42).choice(len(df), size=sample_size, replace=False)
+        df_sample = df.iloc[sample_indices]
+        labels_sample = np.array(labels)[sample_indices]
+        
+        X = df_sample.values
+        
+        # Calcular métricas
+        from sklearn.metrics import silhouette_score, davies_bouldin_score
+        sil_avg = silhouette_score(X, labels_sample)
+        db_score = davies_bouldin_score(X, labels_sample)
+        
+        # Contagem por cluster
+        unique, counts = np.unique(labels_sample, return_counts=True)
+        cluster_counts = dict(zip(unique, counts))
+        
+        # Texto de resultados
+        eval_text = f"""
+        **Métricas de Avaliação:**
+        - Silhouette médio (global): {sil_avg:.3f}
+        - Davies-Bouldin: {db_score:.3f}
+        - Amostra usada: {sample_size} linhas
+        
+        **Contagem por cluster:**
+        """ + "\n".join([f"- Cluster {k}: {v} pontos" for k, v in cluster_counts.items()])
+        
+        # Plot: Silhouette por cluster (igual ao notebook)
+        from sklearn.metrics import silhouette_samples
+        silhouette_vals = silhouette_samples(X, labels_sample)
+        
+        fig = go.Figure()
+        y_lower = 10
+        for i in np.unique(labels_sample):
+            ith_cluster_silhouette_values = silhouette_vals[labels_sample == i]
+            ith_cluster_silhouette_values.sort()
+            size_cluster_i = ith_cluster_silhouette_values.shape[0]
+            y_upper = y_lower + size_cluster_i
+            fig.add_trace(go.Bar(
+                x=ith_cluster_silhouette_values,
+                y=np.arange(y_lower, y_upper),
+                orientation='h',
+                name=f'Cluster {i}',
+                showlegend=False
+            ))
+            fig.add_vline(x=sil_avg, line_dash="dash", line_color="red")
+            y_lower = y_upper
+        
+        fig.update_layout(
+            title="Gráfico de Silhueta",
+            xaxis_title="Valor da Silhueta",
+            yaxis_title="Cluster",
+            template='plotly_dark'
+        )
+        
+        return eval_text, fig
+        
+    except Exception as e:
+        empty_fig = go.Figure(layout={"title": "Erro na avaliação", "template": "plotly_dark"})
+        return dbc.Alert(f"Erro na avaliação: {type(e).__name__}: {e}", color="danger"), empty_fig

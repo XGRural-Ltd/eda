@@ -1,10 +1,12 @@
 import dash
-from dash import html, dcc, callback, Input, Output
-import pandas as pd
-import plotly.graph_objects as go
+from dash import html, dcc, callback, Input, Output, State, no_update
 import dash_bootstrap_components as dbc
+import pandas as pd
 import numpy as np
-from io import StringIO
+import plotly.express as px
+import plotly.graph_objects as go
+from src.constants import STORE_MAIN
+from src.utils import to_df
 
 dash.register_page(__name__, path='/correlacao', name='Correlação', order=3)
 
@@ -24,7 +26,8 @@ layout = dbc.Container([
         ], width=4),
         dbc.Col([
             html.Label("Ocultar correlações com valor absoluto abaixo de:"),
-            dcc.Slider(0.0, 1.0, 0.05, value=0.0, id='corr-threshold-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
+            # --- CHANGED: default alinhado ao notebook (0.4) ---
+            dcc.Slider(0.0, 1.0, 0.05, value=0.4, id='corr-threshold-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
         ], width=4),
     ], className="my-3"),
 
@@ -37,43 +40,61 @@ layout = dbc.Container([
 # --- Callbacks ---
 @callback(
     Output('corr-genre-select', 'options'),
-    Input('main-df-store', 'data')
+    Input(STORE_MAIN, 'data')
 )
 def populate_corr_dropdown(json_data):
-    if json_data is None: return []
-    df = pd.read_json(StringIO(json_data), orient='split')
+    if json_data is None:
+        return []
+    df = to_df(json_data)
+    # garante coluna de gênero como no pipeline2.0
+    if 'track_genre' not in df.columns:
+        df['track_genre'] = 'unknown'
     return ['Todos'] + sorted(df['track_genre'].unique().tolist())
 
 @callback(
     Output('corr-heatmap', 'figure'),
     Output('corr-strong-pairs-table', 'children'),
-    Input('main-df-store', 'data'),
+    Input(STORE_MAIN, 'data'),
     Input('corr-genre-select', 'value'),
     Input('corr-method-select', 'value'),
     Input('corr-threshold-slider', 'value')
 )
-def update_correlation_analysis(json_data, selected_genre, corr_method, corr_threshold):
-    if not all([json_data, corr_method]) or selected_genre is None:
-        return go.Figure(layout={'title': 'Selecione as opções para gerar o gráfico'}), "Selecione as opções"
+def update_correlation_analysis(main_store, selected_genre, corr_method, corr_threshold):
+    df = to_df(main_store)
 
-    df = pd.read_json(StringIO(json_data), orient='split')
-    num_features = df.select_dtypes(include=np.number).columns.tolist()
+    if df is None or df.empty or corr_method is None or selected_genre is None:
+        empty_fig = go.Figure(layout={"title": "Selecione método e gênero", "template": "plotly_dark"})
+        return empty_fig, html.Div("Nenhum dado disponível.")
+
+    # --- CHANGED: usa a lista explícita de num_features do pipeline2.0 ---
+    num_features = [
+        'popularity', 'duration_ms', 'danceability', 'energy', 'loudness',
+        'speechiness', 'acousticness', 'instrumentalness',
+        'liveness', 'valence', 'tempo', 'time_signature'
+    ]
+    # filtra apenas colunas que realmente existem no df
+    num_features = [f for f in num_features if f in df.columns]
+
+    # garante coluna de gênero
+    if 'track_genre' not in df.columns:
+        df['track_genre'] = 'unknown'
 
     if selected_genre == 'Todos':
-        df_corr = df[num_features]
+        df_corr = df[num_features].copy()
     else:
-        df_corr = df[df['track_genre'] == selected_genre][num_features]
+        df_corr = df[df['track_genre'] == selected_genre][num_features].copy()
 
     if df_corr.empty or len(df_corr) < 2:
         return go.Figure(layout={'title': f'Não há dados suficientes para {selected_genre}'}), "Dados insuficientes"
 
-    # Heatmap
+    # --- CHANGED: corr_matrix conforme pipeline2.0 (método escolhível) ---
     corr_matrix = df_corr.corr(method=corr_method)
-    mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-    corr_matrix_masked = corr_matrix.mask(mask) # Hide upper triangle
-    
+
+    # Heatmap: esconder triângulo superior (k=1) como no notebook
+    mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+    corr_matrix_masked = corr_matrix.mask(mask)  # oculta triângulo superior e diagonal
     fig = go.Figure(go.Heatmap(
-        z=corr_matrix_masked,
+        z=corr_matrix_masked.values,
         x=corr_matrix.columns,
         y=corr_matrix.columns,
         colorscale='RdBu',
@@ -84,9 +105,9 @@ def update_correlation_analysis(json_data, selected_genre, corr_method, corr_thr
     ))
     fig.update_layout(title=f"Matriz de Correlação ({corr_method.capitalize()}, Gênero: {selected_genre})")
 
-    # Strong pairs table
+    # --- CHANGED: unstack usando mask com k=1 e filtragem '>' como no notebook ---
     corr_unstacked = corr_matrix.where(np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)).stack()
-    strong_pairs = corr_unstacked[abs(corr_unstacked) >= corr_threshold].sort_values(key=abs, ascending=False)
+    strong_pairs = corr_unstacked[abs(corr_unstacked) > corr_threshold].sort_values(key=abs, ascending=False)
 
     if strong_pairs.empty:
         table_content = dbc.Alert(f"Nenhum par encontrado com correlação absoluta > {corr_threshold}", color="warning")
@@ -97,5 +118,11 @@ def update_correlation_analysis(json_data, selected_genre, corr_method, corr_thr
             html.H5(f"Pares com Maior Correlação (> {corr_threshold})"),
             dbc.Table.from_dataframe(df_pairs.head(20), striped=True, bordered=True, hover=True, size='sm')
         ]
-        
+
     return fig, table_content
+
+def some_func_using_store(main_store):
+    df = to_df(main_store)
+    if df is None:
+        # fallback consistent with original behavior
+        return None

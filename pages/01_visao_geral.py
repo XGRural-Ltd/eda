@@ -1,11 +1,13 @@
 import dash
-from dash import html, dcc, callback, Input, Output, no_update
+from dash import html, dcc, callback, Input, Output, State, no_update
+from src.constants import STORE_MAIN
 import pandas as pd
-import plotly.express as px
+from src.utils import to_df
 import dash_bootstrap_components as dbc
 import numpy as np
 import plotly.graph_objects as go
-from io import StringIO
+import plotly.express as px
+import traceback  # ADICIONADO
 
 dash.register_page(__name__, path='/', name='Visão Geral', order=1)
 
@@ -109,38 +111,48 @@ layout = dbc.Container([
     Output('geral-dist-col-select', 'options'),
     Output('geral-scatter-x-axis', 'options'),
     Output('geral-scatter-y-axis', 'options'),
-    Input('main-df-store', 'data')
+    Input(STORE_MAIN, 'data'),
+    prevent_initial_call=False
 )
-def update_geral_page_components(json_data):
-    if json_data is None: return [no_update] * 7
-    df = pd.read_json(StringIO(json_data), orient='split')
-    
-    all_cols = df.columns.tolist()
-    num_cols = df.select_dtypes(include=np.number).columns.tolist()
+def update_geral_page_components(main_store):
+    try:
+        df = to_df(main_store)
+        if df is None:
+            return [], [], html.Div("Nenhum dado carregado."), "", [], [], []
+        all_cols = df.columns.tolist()
+        num_cols = df.select_dtypes(include=np.number).columns.tolist()
 
-    # Estatísticas formatadas como no Home.py
-    desc = df.describe().rename(columns=cols_dict).T
-    desc = desc.drop(columns=['count'], errors='ignore')
-    desc = desc.applymap(lambda x: f"{x:.2f}" if isinstance(x, (int, float, np.floating)) else x)
-    desc = desc.reset_index().rename(columns={'index': 'Feature'})
-    desc_table = dbc.Table.from_dataframe(desc, striped=True, bordered=True, hover=True, responsive=True)
-    
-    info_text = [
-        html.P(f"Existem {df[df.duplicated()].shape[0]} faixas duplicadas nessa base de dados."),
-        html.P(f"Existem {df[df.isnull().any(axis=1)].shape[0]} faixas com dados faltantes.")
-    ]
-    return all_cols, all_cols[:6], desc_table, info_text, num_cols, num_cols, num_cols
+        # Estatísticas formatadas como no Home.py
+        desc = df.describe().rename(columns=cols_dict).T
+        desc = desc.drop(columns=['count'], errors='ignore')
+        desc = desc.applymap(lambda x: f"{x:.2f}" if isinstance(x, (int, float, np.floating)) else x)
+        desc = desc.reset_index().rename(columns={'index': 'Feature'})
+        desc_table = dbc.Table.from_dataframe(desc, striped=True, bordered=True, hover=True, responsive=True)
+        
+        info_text = [
+            html.P(f"Existem {df[df.duplicated()].shape[0]} faixas duplicadas nessa base de dados."),
+            html.P(f"Existem {df[df.isnull().any(axis=1)].shape[0]} faixas com dados faltantes.")
+        ]
+        return all_cols, all_cols[:6], desc_table, info_text, num_cols, num_cols, num_cols
+    except Exception as e:
+        print("ERROR in update_geral_page_components:", e)
+        traceback.print_exc()
+        # retornos fallback (mesma forma/quantidade de outputs)
+        return [], [], html.Div("Erro interno: verifique o terminal."), "", [], [], []
 
 # Callback for the head table based on multiselect
 @callback(
     Output('geral-head-table', 'children'),
-    Input('main-df-store', 'data'),
+    Input(STORE_MAIN, 'data'),
     Input('geral-cols-multiselect', 'value')
 )
-def update_head_table(json_data, selected_cols):
-    if not json_data or not selected_cols: return "Selecione colunas para exibir a tabela."
-    df = pd.read_json(StringIO(json_data), orient='split')
-    return dbc.Table.from_dataframe(df[selected_cols].head(15), striped=True, bordered=True, hover=True)
+def update_head_table(main_store, *args):
+    # accept extra inputs/triggers safely; main_store is expected to be the first arg
+    df = to_df(main_store)
+    if df is None:
+        return html.Div("Nenhum dado carregado."), ""
+
+    return dbc.Table.from_dataframe(df.head(15), striped=True, bordered=True, hover=True)
 
 # Distribuição: Histograma/Boxplot/Ambos (igual ao Home.py)
 @callback(
@@ -148,30 +160,36 @@ def update_head_table(json_data, selected_cols):
     Output('geral-dist-graph-box', 'figure'),
     Output('geral-dist-graph-hist', 'style'),
     Output('geral-dist-graph-box', 'style'),
-    Input('main-df-store', 'data'),
+    Input(STORE_MAIN, 'data'),
     Input('geral-dist-col-select', 'value'),
     Input('geral-dist-plot-type', 'value')
 )
 def update_dist_graphs(json_data, selected_col, plot_type):
-    empty = go.Figure(layout={"title": "Selecione uma coluna para visualizar"})
-    if not all([json_data, selected_col, plot_type]):
+    try:
+        empty = go.Figure(layout={"title": "Selecione uma coluna para visualizar"})
+        if not all([json_data, selected_col, plot_type]):
+            return empty, empty, {'display': 'block'}, {'display': 'none'}
+        df = to_df(json_data).dropna()
+        col_name = cols_dict.get(selected_col, selected_col)
+
+        fig_hist = px.histogram(df, x=selected_col, title=f"Histograma de {col_name}", labels={selected_col: col_name})
+        fig_box = px.box(df, x=selected_col, title=f"Boxplot de {col_name}", labels={selected_col: col_name})
+
+        show_hist = plot_type in ['Histograma', 'Ambos']
+        show_box = plot_type in ['Boxplot', 'Ambos']
+        style_hist = {'display': 'block'} if show_hist else {'display': 'none'}
+        style_box = {'display': 'block'} if show_box else {'display': 'none'}
+        return fig_hist, fig_box, style_hist, style_box
+    except Exception as e:
+        print("ERROR in update_dist_graphs:", e)
+        traceback.print_exc()
+        empty = go.Figure(layout={"title": "Erro interno"})
         return empty, empty, {'display': 'block'}, {'display': 'none'}
-    df = pd.read_json(StringIO(json_data), orient='split').dropna()
-    col_name = cols_dict.get(selected_col, selected_col)
-
-    fig_hist = px.histogram(df, x=selected_col, title=f"Histograma de {col_name}", labels={selected_col: col_name})
-    fig_box = px.box(df, x=selected_col, title=f"Boxplot de {col_name}", labels={selected_col: col_name})
-
-    show_hist = plot_type in ['Histograma', 'Ambos']
-    show_box = plot_type in ['Boxplot', 'Ambos']
-    style_hist = {'display': 'block'} if show_hist else {'display': 'none'}
-    style_box = {'display': 'block'} if show_box else {'display': 'none'}
-    return fig_hist, fig_box, style_hist, style_box
 
 # Dispersão com lógica do Home.py
 @callback(
     Output('geral-scatter-graph', 'figure'),
-    Input('main-df-store', 'data'),
+    Input(STORE_MAIN, 'data'),
     Input('geral-scatter-x-axis', 'value'),
     Input('geral-scatter-y-axis', 'value'),
     Input('geral-scatter-trend-check', 'value')
@@ -179,7 +197,11 @@ def update_dist_graphs(json_data, selected_col, plot_type):
 def update_scatter_graph(json_data, x_axis, y_axis, trend_check):
     if not all([json_data, x_axis, y_axis]):
         return go.Figure(layout={"title": "Selecione as variáveis X e Y para visualizar"})
-    df = pd.read_json(StringIO(json_data), orient='split').dropna()
+    df = to_df(json_data)
+    if df is None:
+        return go.Figure(layout={"title": "Nenhum dado"})
+    df = df.dropna()
+
     x_name = cols_dict.get(x_axis, x_axis)
     y_name = cols_dict.get(y_axis, y_axis)
 

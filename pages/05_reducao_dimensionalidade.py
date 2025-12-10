@@ -1,21 +1,22 @@
 import dash
+from dash import html, dcc, callback, Input, Output, State, no_update
 import dash_bootstrap_components as dbc
-from dash import html, dcc, callback, Input, Output, State, no_update, dash_table
-import pandas as pd, numpy as np, plotly.express as px
-from io import StringIO, BytesIO
-import json
-import joblib
-import base64
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from src.constants import STORE_MAIN, STORE_PROCESSED, STORE_PCA, STORE_SAMPLED_PCA, STORE_PCA_MODEL
+from src.utils import to_df
+from src.pipeline import run_pca  # ENSURE THIS IMPORT
 
 dash.register_page(__name__, path='/reducao', name='Redução de Dimensionalidade', order=5)
 
-DEFAULT_PCA_FEATURES = [
-    'danceability', 'energy', 'loudness', 'acousticness', 'valence',
-    'tempo', 'popularity', 'duration_s'
-]
+# Default numeric features to select for PCA (if they exist in dataset)
+DEFAULT_PCA_FEATURES = ['danceability', 'energy', 'loudness', 'acousticness', 'valence', 'tempo', 'popularity', 'duration_s']
 
-# --- Layout ---
+# === ADD STORES AT PAGE TOP (before layout definition) ===
 layout = dbc.Container([
+    
     html.H3("📉 Redução de Dimensionalidade (PCA)"),
     dcc.Markdown("""
     A Análise de Componentes Principais (PCA) nos ajuda a 'comprimir' as informações mais importantes de muitas features em um número menor de componentes.
@@ -42,6 +43,17 @@ layout = dbc.Container([
     html.H5("Amostra dos Dados Transformados pelo PCA", className="mt-4"),
     dbc.Spinner(html.Div(id='pca-result-table')),
 
+    # --- ELBOW: gráfico automático ligado ao pca-df-store ---
+    html.Hr(),
+    html.Div([
+        html.H5("Elbow Method (Inércia vs k) — automático"),
+        dcc.Graph(id='elbow-plot', config={'displayModeBar': False}),
+        html.Label("Valor máximo de k para o Elbow:"),
+        dcc.Slider(2, 20, 1, value=6, id='elbow-kmax-slider', marks=None,
+                   tooltip={"placement": "bottom", "always_visible": True}),
+        html.Div(id='elbow-status-div', className="mt-2")
+    ], className="my-3"),
+
     dbc.Row([
         dbc.Col([
             html.Hr(),
@@ -59,8 +71,7 @@ layout = dbc.Container([
         style={"position": "fixed", "top": 66, "right": 10, "width": 350, "zIndex": 9999},
     ),
 
-    # Stores
-    html.Div(id='pca-df-json-storage', style={'display': 'none'})
+    # Stores usados pelos callbacks (armazenam PCA, modelo e meta)
 ], fluid=True)
 
 def _json_to_df(obj):
@@ -68,7 +79,7 @@ def _json_to_df(obj):
         return None
     if isinstance(obj, str):
         try:
-            return pd.read_json(StringIO(obj), orient='split')
+            return to_df(obj)
         except Exception:
             return None
     if isinstance(obj, dict) and {'data','columns'}.issubset(obj):
@@ -92,8 +103,8 @@ def _choose_df(proc_json, main_json):
 @callback(
     Output('pca-features-dropdown', 'options'),
     Output('pca-features-dropdown', 'value'),
-    Input('processed-df-store', 'data'),
-    Input('main-df-store', 'data')
+    Input(STORE_PROCESSED, 'data'),
+    Input(STORE_MAIN, 'data')
 )
 def populate_pca_features(proc_json, main_json):
     df = _choose_df(proc_json, main_json)
@@ -111,95 +122,162 @@ def populate_pca_features(proc_json, main_json):
 @callback(
     Output('pca-variance-graph', 'figure'),
     Output('pca-result-table', 'children'),
-    Output('pca-warning-div', 'children'),
     Output('pca-df-store', 'data'),
-    Output('pca-model-store', 'data'),
-    Output('scaler-store', 'data'),
-    Output('pca-features-store', 'data'),
+    Output('sampled-pca-df-store', 'data'),
+    Output(STORE_PCA_MODEL, 'data'),
     Input('pca-run-btn', 'n_clicks'),
     State('processed-df-store', 'data'),
-    State('main-df-store', 'data'),
     State('pca-features-dropdown', 'value'),
     State('pca-n-components-slider', 'value'),
     prevent_initial_call=True
 )
-def perform_pca(n_clicks, processed_data, main_data, features, n_components):
-    import plotly.graph_objects as go
-    empty = go.Figure(layout={"title": "Selecione features e execute o PCA"})
-    no_update_list = [no_update] * 4 # For models and features
-
-    df = _choose_df(processed_data, main_data)
-    if df is None or df.empty or not features:
-        return empty, "", "Dados ou features inválidos.", *no_update_list
-
-    feats = [c for c in (features or []) if c in df.columns]
-    if not feats:
-        return empty, "", "Nenhuma feature válida para PCA.", *no_update_list
-
-    X = df[feats].select_dtypes(include=np.number).dropna()
-    if X.empty:
-        return empty, "", "As features selecionadas não são numéricas ou estão vazias.", *no_update_list
-
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.decomposition import PCA
+def perform_pca(n_clicks, processed_store, features, n_components):
+    print(f"[PCA] perform_pca called: n_clicks={n_clicks}, features={features}, n_components={n_components}")
     
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X.astype(float))
-
-    n_comp = int(n_components or 2)
-    n_comp = max(2, min(n_comp, Xs.shape[1]))
-    pca = PCA(n_components=n_comp)
-    comps = pca.fit_transform(Xs)
-
-    # --- Define variables for graph and table ---
-    ratio = pca.explained_variance_ratio_
-    cum_ratio = np.cumsum(ratio)
-    components_labels = [f"PC{i+1}" for i in range(n_comp)]
-
-    # --- Serialize and save models and features ---
-    def serialize_model(model):
-        mem_buffer = BytesIO()
-        joblib.dump(model, mem_buffer)
-        mem_buffer.seek(0)
-        return base64.b64encode(mem_buffer.read()).decode('utf-8')
-
-    b64_pca_model = serialize_model(pca)
-    b64_scaler_model = serialize_model(scaler)
+    empty = go.Figure(layout={"title": "Selecione features e execute o PCA", "template": "plotly_dark"})
     
-    # Gráfico: barras (variância) + linha (acumulada)
-    var_fig = go.Figure()
-    var_fig.add_bar(x=components_labels, y=ratio, name="Variância explicada")
-    var_fig.add_scatter(x=components_labels, y=cum_ratio, mode="lines+markers", name="Variância acumulada")
-    var_fig.update_layout(
-        title="Variância explicada e acumulada por componente",
-        yaxis=dict(title="Proporção", range=[0, 1]),
-        xaxis_title="Componentes",
-        legend=dict(orientation="h", y=-0.2)
-    )
+    if not n_clicks:
+        print("[PCA] No clicks yet")
+        return empty, no_update, no_update, no_update, no_update
 
-    # Tabela com coluna de variância acumulada
-    res_table = pd.DataFrame({
-        "Componente": components_labels,
-        "Variância Explicada": np.round(ratio, 4),
-        "Variância Acumulada": np.round(cum_ratio, 4)
-    })
-    table = dash_table.DataTable(
-        columns=[{"name": c, "id": c} for c in res_table.columns],
-        data=res_table.to_dict("records"),
-        style_table={"overflowX": "auto"}
-    )
+    df_proc = to_df(processed_store)
+    if df_proc is None or df_proc.empty:
+        warn = dbc.Alert([
+            html.H5("⚠️ Dados processados não encontrados", className="alert-heading"),
+            html.P("Você precisa executar o pré-processamento primeiro:"),
+            html.Ol([
+                html.Li("Vá para a página 'Pré-processamento'"),
+                html.Li("Execute o pré-processamento"),
+                html.Li("Volte aqui e execute o PCA")
+            ])
+        ], color="warning")
+        print("[PCA] No processed data")
+        return empty, warn, no_update, no_update, no_update
 
-    pca_df = pd.DataFrame(comps, index=X.index, columns=[f"PC{i+1}" for i in range(comps.shape[1])])
-    pca_dict = pca_df.to_dict(orient='split')
-    return var_fig, table, "", pca_dict, b64_pca_model, b64_scaler_model, feats
+    if not features or len(features) < 2:
+        warn = dbc.Alert("Selecione ao menos 2 features para PCA.", color="warning")
+        print("[PCA] Not enough features selected")
+        return empty, warn, no_update, no_update, no_update
+
+    try:
+        print(f"[PCA] Running PCA with {len(features)} features, n_components={n_components}")
+        out = run_pca(processed_store, features=features, n_components=n_components)
+        print(f"[PCA] PCA output keys: {list(out.keys())}")
+        
+        # Check if PCA succeeded
+        if 'pca_store' not in out or not out['pca_store']:
+            raise ValueError("run_pca did not return valid pca_store")
+            
+        # Build variance explained figure
+        explained_var = out.get('explained_variance', [])
+        cumulative_var = out.get('cumulative_variance', [])
+        
+        if explained_var and cumulative_var:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=[f'PC{i+1}' for i in range(len(explained_var))],
+                y=explained_var,
+                name='Variância explicada',
+                marker_color='lightblue'
+            ))
+            fig.add_trace(go.Scatter(
+                x=[f'PC{i+1}' for i in range(len(cumulative_var))],
+                y=cumulative_var,
+                name='Variância acumulada',
+                mode='lines+markers',
+                marker_color='orange',
+                yaxis='y2'
+            ))
+            fig.update_layout(
+                title=f'Variância Explicada - PCA com {len(explained_var)} componentes',
+                template='plotly_dark',
+                yaxis=dict(title='Variância explicada (%)'),
+                yaxis2=dict(title='Acumulada (%)', overlaying='y', side='right'),
+                hovermode='x unified'
+            )
+            print(f"[PCA] Created variance figure with {len(explained_var)} components")
+        else:
+            fig = go.Figure(layout={"title": "PCA concluído (sem dados de variância)", "template": "plotly_dark"})
+            print("[PCA] No variance data available")
+
+        # Build result table
+        pca_df = pd.DataFrame(**out['pca_store'])
+        n_samples = len(pca_df)
+        n_comps = len([c for c in pca_df.columns if c.startswith('PC')])
+        table = html.Div([
+            html.P(f"✓ PCA concluído: {n_comps} componentes, {n_samples} amostras"),
+            html.P(f"Variância explicada acumulada: {cumulative_var[-1]:.1f}%") if cumulative_var else None
+        ])
+
+        print(f"[PCA] Returning: fig, table, pca_store ({n_samples} rows), sampled_store, pca_model")
+        return fig, table, out['pca_store'], out.get('sampled_store'), out.get('pca_model')
+
+    except Exception as e:
+        warn = dbc.Alert(f"Erro ao executar PCA: {type(e).__name__}: {e}", color="danger")
+        print(f"[PCA] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return empty, warn, no_update, no_update, no_update
+
+@callback(
+    Output('elbow-plot', 'figure'),
+    Input(STORE_PCA, 'data'),
+    Input('elbow-kmax-slider', 'value')
+)
+def update_elbow_on_pca(pca_dict, kmax):
+    import plotly.express as _px
+    empty = _px.line(title="Execute PCA para gerar o Elbow automaticamente", template="plotly_dark")
+    if not pca_dict:
+        return empty
+    try:
+        df_pca = pd.DataFrame(**pca_dict)
+    except Exception:
+        return empty
+
+    # usa primeiras 2 colunas do PCA (se existirem)
+    if df_pca.shape[1] >= 2:
+        X_elbow = df_pca.iloc[:, :2].values
+    else:
+        X_elbow = df_pca.iloc[:, :1].values
+
+    SAMPLE_SIZE = 5000
+    if X_elbow.shape[0] > SAMPLE_SIZE:
+        rng = np.random.RandomState(42)
+        idx = rng.choice(X_elbow.shape[0], SAMPLE_SIZE, replace=False)
+        X_sample = X_elbow[idx]
+    else:
+        X_sample = X_elbow
+
+    try:
+        kmax = int(kmax or 6)
+    except Exception:
+        kmax = 6
+    k_range = list(range(1, max(1, kmax) + 1))
+
+    inertias = []
+    from sklearn.cluster import KMeans
+    for k in k_range:
+        km = KMeans(n_clusters=k, random_state=42, n_init=10)
+        km.fit(X_sample)
+        inertias.append(km.inertia_)
+
+    fig = _px.line(x=k_range, y=inertias, markers=True,
+                   labels={'x': 'k', 'y': 'Inércia'},
+                   title="Elbow Method (Inércia vs k)",
+                   template="plotly_dark")
+    # style markers to match cluster page (light fill + subtle border)
+    fig.update_traces(marker=dict(size=6, color='rgba(255,255,255,0.95)', line=dict(width=0.3, color='rgba(0,0,0,0.35)')),
+                      line=dict(color='rgba(200,200,200,0.9)'))
+    fig.update_layout(xaxis=dict(dtick=1))
+    return fig
 
 # Toast de salvar: usa o botão correto e só LÊ do Store
 @callback(
     Output('save-pca-toast', 'is_open'),
     Output('save-pca-toast', 'children'),
     Input('save-pca-df-button', 'n_clicks'),
-    State('pca-df-store', 'data'),
-    State('pca-model-store', 'data'),
+    State(STORE_PCA, 'data'),
+    State(STORE_PCA_MODEL, 'data'),
     prevent_initial_call=True
 )
 def save_pca(n, pca_json, pca_model_b64):

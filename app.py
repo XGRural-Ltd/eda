@@ -2,123 +2,97 @@ import os
 import pandas as pd
 import kagglehub
 import dash
-import dash_bootstrap_components as dbc
-from dash import dcc, html, Dash, Input, Output, State
 import threading
-from io import StringIO
-import json
+from dash import dcc, html, Dash, Input, Output, State, ALL
+import plotly.io as pio
+import dash_bootstrap_components as dbc
+from src.constants import (
+    STORE_MAIN,
+    STORE_PROCESSED,
+    STORE_PCA,
+    STORE_SAMPLED_PCA,
+    STORE_CLUSTER_LABELS,
+    STORE_PREDICTION_MODEL,
+    STORE_PCA_MODEL,
+    STORE_SCALER,
+    STORE_PCA_FEATURES,
+)
 
-# --- 1. LOAD DATA ONCE WHEN THE APP STARTS ---
-def load_initial_data():
-    """Loads the main dataframe from Kaggle ONCE."""
-    try:
-        print("Attempting to download dataset from Kaggle...")
-        path = kagglehub.dataset_download("maharshipandya/-spotify-tracks-dataset")
-        path_dataset = os.path.join(path, 'dataset.csv')
-        print(f"Dataset downloaded to: {path_dataset}")
+pio.templates.default = "plotly_dark"
 
-        # Ler e tratar índice salvo/Unnamed
-        tmp = pd.read_csv(path_dataset)
-        if tmp.columns[0].startswith('Unnamed'):
-            df = pd.read_csv(path_dataset, index_col=0)
-        else:
-            df = tmp
-        df = df.loc[:, ~df.columns.str.startswith('Unnamed')]
-
-        # duration_ms -> duration_s
-        if 'duration_ms' in df.columns:
-            df['duration_s'] = (df['duration_ms'] / 1000).astype(float).round(3)
-            df = df.drop(columns=['duration_ms'])
-
-        # Remover colunas duplicadas por segurança
-        df = df.loc[:, ~df.columns.duplicated()]
-
-        print("Dataset loaded and processed successfully.")
-        return df.to_json(date_format='iso', orient='split')
-    except Exception as e:
-        print(f"CRITICAL ERROR loading data from Kaggle: {e}")
-        return None
-
-# Hold dataset JSON; populated once
-main_df_json = None
-
-# --- App Initialization ---
 app = Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.CYBORG], suppress_callback_exceptions=True)
-server = app.server
 
-# one-time init
-_init_lock = threading.Lock()
-_initialized = False
+# --- Sidebar automático (gera links a partir de dash.page_registry) ---
+def _build_sidebar():
+    links = []
+    for p in dash.page_registry.values():
+        # ignora páginas marcadas como `path=None` (não registradas)
+        if not p.get("path"):
+            continue
+        links.append(
+            dbc.NavLink(p.get("name", p["module"]), href=p["path"], active="exact", className="mb-1")
+        )
+    nav = dbc.Nav(links, vertical=True, pills=True, className="flex-column")
+    card = dbc.Card(dbc.CardBody([html.H5("Navegação"), nav]), className="h-100")
+    return card
 
-@server.before_request
-def _ensure_init():
-    global _initialized, main_df_json
-    if not _initialized:
-        with _init_lock:
-            if not _initialized:
-                main_df_json = load_initial_data()
-                _initialized = True
+# --- TRY TO LOAD DATA ON STARTUP (serialized for dcc.Store initial value) ---
+def _load_initial_dataset():
+    """Return DataFrame serialized as orient='split' or None. Tries local CSVs then kagglehub."""
+    candidates = [
+        os.path.join(os.getcwd(), "data", "dataset.csv"),
+        os.path.join(os.getcwd(), "dataset.csv"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                df = pd.read_csv(p, index_col=0)
+                print(f"Loaded dataset from {p} (shape: {df.shape})")
+                return df.to_dict(orient="split")
+            except Exception as e:
+                print(f"Failed to read {p}: {e}")
+    # fallback: kagglehub
+    try:
+        path = kagglehub.dataset_download("maharshipandya/-spotify-tracks-dataset")
+        csv_path = os.path.join(path, "dataset.csv")
+        if os.path.exists(csv_path):
+            df = pd.read_csv(csv_path, index_col=0)
+            print(f"Loaded dataset via kagglehub (shape: {df.shape})")
+            return df.to_dict(orient="split")
+    except Exception as e:
+        print("kagglehub load failed:", e)
+    print("No initial dataset available; main store will start empty.")
+    return None
 
-# Sidebar (links para as páginas registradas)
-sidebar = html.Div(
-    [
-        html.Img(
-            src="/assets/logo.png",
-            style={
-                "height": "160px",
-                "margin": "0 auto",
-                "display": "block",
-                "padding": "20px 0"
-            }
-        ),
-        dbc.Nav(
-            [
-                dbc.NavLink(
-                    html.Div(page["name"], className="my-navlink"),
-                    href=page["path"],
-                    active="exact"
-                )
-                for page in dash.page_registry.values()
-            ],
-            vertical=True,
-            pills=True
-        ),
-    ],
-    className="sidebar"
-)
+# call once at startup
+_INITIAL_MAIN_STORE = _load_initial_dataset()
 
-# --- Layout (ensure session storage to persist across pages/tabs) ---
+# --- CRITICAL: ALL stores MUST be in app.layout root (shared across all pages) ---
 app.layout = dbc.Container([
-    dcc.Store(id='main-df-store', storage_type='memory'),
-    dcc.Store(id='processed-df-store', storage_type='memory'),
-    dcc.Store(id='pca-df-store', storage_type='memory'),
-    dcc.Store(id='cluster-labels-store', storage_type='memory'),
-    dcc.Store(id='prediction-model-store'),
-    dcc.Store(id='pca-model-store'),
-    dcc.Store(id='scaler-store'),
-    dcc.Store(id='pca-features-store'),
-    dcc.Store(id='sampled-pca-df-store'),
+    # === GLOBAL STORES (shared by all pages) - MUST be before page_container ---
+    dcc.Store(id="main-df-store", data=_INITIAL_MAIN_STORE, storage_type='memory'),
+    dcc.Store(id="processed-df-store", storage_type='memory'),
+    dcc.Store(id="pca-df-store", storage_type='memory'),
+    dcc.Store(id="sampled-pca-df-store", storage_type='memory'),
+    dcc.Store(id="cluster-labels-store", storage_type='memory'),
+    dcc.Store(id="prediction-model-store", storage_type='memory'),
+    dcc.Store(id="pca-model-store", storage_type='memory'),
+    dcc.Store(id="scaler-store", storage_type='memory'),
+    dcc.Store(id="pca-features-store", storage_type='memory'),
+
     dcc.Location(id='url', refresh=False),
-    html.Div(
-        sidebar,
-        className="sidebar-fixed"
-    ),
+    
+    dbc.Row([
+        dbc.Col(_build_sidebar(), width=2, style={"height": "100vh", "overflow-y": "auto"}),
+        dbc.Col(dash.page_container, width=10, style={"height": "100vh", "overflow-y": "auto"})
+    ], className="g-0", style={"height": "100vh"}),
+], fluid=True, style={"height": "100vh", "overflow": "hidden"})
 
-    # --- ÁREA DE CONTEÚDO (rolável) ---
-    html.Div(
-        dash.page_container
-    )
-], fluid=True)
+# --- REMOVE THIS (causes Stores to be hidden) ---
+# def print_callbacks_for_ids(target_ids):
+#     ...
 
-# Do not overwrite cached main df once set (allow duplicate with initial_duplicate)
-@app.callback(
-    Output('main-df-store', 'data', allow_duplicate=True),
-    Input('url', 'pathname'),
-    State('main-df-store', 'data'),
-    prevent_initial_call='initial_duplicate'
-)
-def store_initial_data(_pathname, current):
-    return current if current is not None else main_df_json
-
-if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
+if __name__ == "__main__":
+    # Production/dev on Windows: disable reloader and debug threads to avoid WinError 10038
+    # Use threaded=False and use_reloader=False to prevent werkzeug reloader conflicts
+    app.run(debug=False, port=8050, use_reloader=False, threaded=False)

@@ -1,13 +1,10 @@
 import dash
 from dash import html, dcc, callback, Input, Output, State, no_update, ALL
-import pandas as pd
-import dash_bootstrap_components as dbc
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans # Keep for type hints, but not used directly
+from src.constants import STORE_MAIN, STORE_PREDICTION_MODEL
 import numpy as np
-from io import StringIO, BytesIO
-import joblib
-import base64
+import plotly.express as px
+import plotly.graph_objects as go
+import dash_bootstrap_components as dbc
 
 dash.register_page(__name__, path='/predicao', name='Atribuição de Cluster', order=8)
 
@@ -43,7 +40,7 @@ layout = dbc.Container([
 # Callback 1: Dynamically generate the input form
 @callback(
     Output('prediction-form-container', 'children'),
-    Input('pca-features-store', 'data')
+    Input(STORE_MAIN, 'data')
 )
 def generate_prediction_form(features):
     if not features:
@@ -74,13 +71,11 @@ def generate_prediction_form(features):
     # Use pattern-matching to get values and IDs from the dynamic form
     State({'type': 'pred-input', 'feature': ALL}, 'value'),
     State({'type': 'pred-input', 'feature': ALL}, 'id'),
-    State('scaler-store', 'data'),
-    State('pca-model-store', 'data'),
-    State('prediction-model-store', 'data'),
+    State(STORE_MAIN, 'data'),
     prevent_initial_call=True
 )
-def assign_to_cluster(n_clicks, feature_values, feature_ids, b64_scaler_model, b64_pca_model, b64_predictor_model):
-    if not all([b64_scaler_model, b64_pca_model, b64_predictor_model]):
+def assign_to_cluster(n_clicks, feature_values, feature_ids, b64_models):
+    if not b64_models:
         alert = dbc.Alert("Modelos necessários (Scaler, PCA, Cluster) não encontrados. Execute os passos anteriores.", color="warning")
         return "", alert
 
@@ -99,16 +94,14 @@ def assign_to_cluster(n_clicks, feature_values, feature_ids, b64_scaler_model, b
         mem_buffer = BytesIO(decoded_model)
         return joblib.load(mem_buffer)
 
-    scaler_model = deserialize_model(b64_scaler_model)
-    pca_model = deserialize_model(b64_pca_model)
-    predictor_model = deserialize_model(b64_predictor_model)
+    models = [deserialize_model(b64_model) for b64_model in b64_models]
 
     # --- 3. Apply the FULL transformation pipeline ---
-    new_song_scaled = scaler_model.transform(new_song_df)
-    new_song_pca = pca_model.transform(new_song_scaled)
+    new_song_scaled = models[0].transform(new_song_df)
+    new_song_pca = models[1].transform(new_song_scaled)
     
     # --- 4. Predict ---
-    predicted_cluster_array = predictor_model.predict(new_song_pca)
+    predicted_cluster_array = models[2].predict(new_song_pca)
     predicted_cluster = predicted_cluster_array[0]
 
     result_card = dbc.Card(

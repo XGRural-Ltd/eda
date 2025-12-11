@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+LGBMClassifier;Treino;Precisão;1,000;0,845;0,972;0,726;0,875;0,995;0,996;0,960;1,000;0,960;0,933;0,933
+LGBMClassifier;Treino;Recall;0,998;0,820;0,964;0,826;0,787;0,999;0,996;0,960;0,999;0,960;0,931;0,931
+LGBMClassifier;Treino;F1-Score;0,999;0,832;0,968;0,773;0,829;0,997;0,996;0,960;0,999;0,960;0,931;0,931
+LGBMClassifier;Treino;Suporte;800;800;800;800;800;800;800;800;800;800;8000;8000
+LGBMClassifier;Treino;Acurácia;-;-;-;-;-;-;-;-;-;-;0,931;-

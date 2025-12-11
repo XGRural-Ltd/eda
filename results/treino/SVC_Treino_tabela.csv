@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+SVC;Treino;Precisão;0,701;0,450;0,700;0,426;0,545;0,724;0,706;0,715;0,696;0,593;0,626;0,626
+SVC;Treino;Recall;0,720;0,650;0,649;0,456;0,294;0,841;0,665;0,599;0,652;0,660;0,619;0,619
+SVC;Treino;F1-Score;0,710;0,532;0,674;0,441;0,382;0,778;0,685;0,652;0,674;0,625;0,615;0,615
+SVC;Treino;Suporte;800;800;800;800;800;800;800;800;800;800;8000;8000
+SVC;Treino;Acurácia;-;-;-;-;-;-;-;-;-;-;0,619;-

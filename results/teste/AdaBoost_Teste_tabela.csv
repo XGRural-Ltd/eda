@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+AdaBoost;Teste;Precisão;0,703;0,335;0,599;0,246;0,308;0,767;0,649;0,553;0,431;0,585;0,518;0,518
+AdaBoost;Teste;Recall;0,545;0,300;0,560;0,565;0,160;0,690;0,600;0,700;0,465;0,240;0,483;0,482
+AdaBoost;Teste;F1-Score;0,614;0,317;0,579;0,343;0,211;0,726;0,623;0,618;0,447;0,340;0,482;0,482
+AdaBoost;Teste;Suporte;200;200;200;200;200;200;200;200;200;200;2000;2000
+AdaBoost;Teste;Acurácia;-;-;-;-;-;-;-;-;-;-;0,482;-

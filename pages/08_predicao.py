@@ -20,7 +20,7 @@ dash.register_page(__name__, path='/predicao', name='Atribuição de Cluster', o
 layout = dbc.Container([
     html.H3("🔮 Construir Playlist via Classificação"),
     dcc.Markdown(
-        "Treine um classificador (RandomForest) usando a lógica do pipeline (agrupamento de gêneros por keyword + top-N) "
+        "Treine um classificador (RandomForest, melhor modelo após testes) usando grupamento de gêneros por keyword manual  "
         "e gere uma playlist com as faixas mais prováveis para um gênero alvo."
     ),
 

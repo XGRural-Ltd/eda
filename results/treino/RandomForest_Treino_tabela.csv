@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+RandomForest;Treino;Precisão;1,000;0,846;0,980;0,751;0,847;0,998;0,998;0,957;1,000;0,966;0,934;0,934
+RandomForest;Treino;Recall;1,000;0,824;0,958;0,804;0,829;0,998;0,998;0,966;1,000;0,956;0,933;0,933
+RandomForest;Treino;F1-Score;1,000;0,835;0,968;0,777;0,838;0,998;0,998;0,961;1,000;0,961;0,933;0,933
+RandomForest;Treino;Suporte;800;800;800;800;800;800;800;800;800;800;8000;8000
+RandomForest;Treino;Acurácia;-;-;-;-;-;-;-;-;-;-;0,933;-

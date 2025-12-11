@@ -51,7 +51,14 @@ layout = dbc.Container([
         html.Label("Valor máximo de k para o Elbow:"),
         dcc.Slider(2, 20, 1, value=6, id='elbow-kmax-slider', marks=None,
                    tooltip={"placement": "bottom", "always_visible": True}),
-        html.Div(id='elbow-status-div', className="mt-2")
+        html.Div(id='elbow-status-div', className="mt-2"),
+
+        # NearestNeighbors (k-distance) para ajudar a escolher eps do DBSCAN
+        html.H6("k-distance (NearestNeighbors) — ajuda a escolher eps para DBSCAN", className="mt-3"),
+        html.Label("k (número de vizinhos) para k-distance:"),
+        dcc.Slider(1, 50, 1, value=4, id='nn-k-slider', marks=None,
+                   tooltip={"placement": "bottom", "always_visible": True}),
+        dcc.Graph(id='nn-plot', config={'displayModeBar': False}),
     ], className="my-3"),
 
     dbc.Row([
@@ -253,7 +260,7 @@ def update_elbow_on_pca(pca_dict, kmax):
     except Exception:
         return empty
 
-    # usa primeiras 2 colunas do PCA (se existirem)
+    # usa primeiras 2 colunas do PCA (se existirem) para o Elbow inertia (visual)
     if df_pca.shape[1] >= 2:
         X_elbow = df_pca.iloc[:, :2].values
     else:
@@ -284,11 +291,67 @@ def update_elbow_on_pca(pca_dict, kmax):
                    labels={'x': 'k', 'y': 'Inércia'},
                    title="Elbow Method (Inércia vs k)",
                    template="plotly_dark")
-    # style markers to match cluster page (light fill + subtle border)
     fig.update_traces(marker=dict(size=6, color='rgba(255,255,255,0.95)', line=dict(width=0.3, color='rgba(0,0,0,0.35)')),
                       line=dict(color='rgba(200,200,200,0.9)'))
     fig.update_layout(xaxis=dict(dtick=1))
     return fig
+
+# NEW callback: k-distance (NearestNeighbors) plot — usa o MESMO PCA (todas as componentes)
+@callback(
+    Output('nn-plot', 'figure'),
+    Input(STORE_PCA, 'data'),
+    Input('nn-k-slider', 'value')
+)
+def update_nn_plot(pca_dict, k_neighbors):
+    import plotly.graph_objects as _go
+    from sklearn.neighbors import NearestNeighbors
+
+    empty_fig = _go.Figure(layout={"title": "k-distance (NearestNeighbors) — carregue PCA primeiro", "template": "plotly_dark"})
+    if not pca_dict:
+        return empty_fig
+    try:
+        df_pca = pd.DataFrame(**pca_dict)
+    except Exception:
+        return empty_fig
+
+    # use todas as componentes do PCA para medir distâncias (mesmo espaço usado para cluster)
+    X = df_pca.values
+    SAMPLE_SIZE = 5000
+    if X.shape[0] > SAMPLE_SIZE:
+        rng = np.random.RandomState(42)
+        idx = rng.choice(X.shape[0], SAMPLE_SIZE, replace=False)
+        X_sample = X[idx]
+    else:
+        X_sample = X
+
+    # garantir k válido
+    try:
+        k = max(1, int(k_neighbors or 4))
+    except Exception:
+        k = 4
+    if X_sample.shape[0] <= k:
+        return _go.Figure(layout={"title": f"Sample size ({X_sample.shape[0]}) <= k ({k}), aumente o sample ou reduza k", "template": "plotly_dark"})
+
+    try:
+        nbrs = NearestNeighbors(n_neighbors=k).fit(X_sample)
+        distances, _ = nbrs.kneighbors(X_sample)
+        # k-distance: distância ao k-ésimo vizinho
+        k_distances = distances[:, k-1]
+        k_distances_sorted = np.sort(k_distances)
+        # plot crescente (forma típica do k-distance plot)
+        fig = _go.Figure()
+        fig.add_trace(_go.Scatter(x=np.arange(len(k_distances_sorted)), y=k_distances_sorted,
+                                  mode='lines+markers', marker=dict(size=4, color='cyan'),
+                                  line=dict(color='white')))
+        fig.update_layout(title=f'k-distance plot (k={k}) — procurar "cotovelo" para escolher eps',
+                          xaxis_title='Pontos ordenados',
+                          yaxis_title=f'Distância ao {k}º vizinho',
+                          template='plotly_dark')
+        return fig
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return _go.Figure(layout={"title": f"Erro ao calcular NearestNeighbors: {type(e).__name__}", "template": "plotly_dark"})
 
 # Toast de salvar: usa o botão correto e só LÊ do Store
 @callback(

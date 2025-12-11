@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+NaiveBayes;Teste;Precisão;0,613;0,360;0,586;0,375;0,435;0,663;0,757;0,660;0,523;0,464;0,543;0,543
+NaiveBayes;Teste;Recall;0,720;0,525;0,580;0,390;0,185;0,895;0,715;0,465;0,345;0,580;0,540;0,540
+NaiveBayes;Teste;F1-Score;0,662;0,427;0,583;0,382;0,260;0,762;0,735;0,545;0,416;0,516;0,529;0,529
+NaiveBayes;Teste;Suporte;200;200;200;200;200;200;200;200;200;200;2000;2000
+NaiveBayes;Teste;Acurácia;-;-;-;-;-;-;-;-;-;-;0,540;-

@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+LogisticRegression;Treino;Precisão;0,604;0,371;0,577;0,332;0,239;0,600;0,564;0,532;0,523;0,472;0,481;0,481
+LogisticRegression;Treino;Recall;0,642;0,460;0,616;0,269;0,099;0,703;0,564;0,541;0,594;0,510;0,500;0,500
+LogisticRegression;Treino;F1-Score;0,623;0,410;0,596;0,297;0,140;0,647;0,564;0,537;0,556;0,490;0,486;0,486
+LogisticRegression;Treino;Suporte;800;800;800;800;800;800;800;800;800;800;8000;8000
+LogisticRegression;Treino;Acurácia;-;-;-;-;-;-;-;-;-;-;0,500;-

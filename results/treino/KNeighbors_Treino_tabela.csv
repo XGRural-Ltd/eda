@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+KNeighbors;Treino;Precisão;0,747;0,610;0,762;0,535;0,661;0,764;0,751;0,785;0,811;0,733;0,716;0,716
+KNeighbors;Treino;Recall;0,781;0,688;0,736;0,615;0,492;0,897;0,781;0,754;0,627;0,746;0,712;0,712
+KNeighbors;Treino;F1-Score;0,764;0,646;0,749;0,572;0,564;0,825;0,766;0,769;0,708;0,740;0,710;0,710
+KNeighbors;Treino;Suporte;800;800;800;800;800;800;800;800;800;800;8000;8000
+KNeighbors;Treino;Acurácia;-;-;-;-;-;-;-;-;-;-;0,712;-

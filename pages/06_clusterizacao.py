@@ -66,17 +66,6 @@ layout = html.Div([
         dbc.Col(dbc.Spinner(dcc.Graph(id='cluster-plot', figure=px.scatter(title="Clusters (PC_1 x PC_2)"))), width=12)
     ]),
 
-    # Elbow method controls (minimal UI so callbacks find components)
-    dbc.Row([
-        dbc.Col([
-            html.Hr(),
-            html.Label("Elbow Method (k-range)"),
-            dcc.RangeSlider(id='elbow-k-range', min=2, max=20, step=1, value=[2, 10], marks=None),
-            dbc.Button("Executar Elbow Method", id='run-elbow-btn', color="secondary", n_clicks=0, className="mt-2"),
-            html.Div(id='elbow-plot-div', className="mt-3")
-        ], width=12)
-    ]),
-
     # Avaliação (mesma página) - botão para disparar avaliação leve (com amostragem)
     dbc.Row([
         dbc.Col(dbc.Button("Avaliar Clusters", id='run-eval-button', color="info", n_clicks=0), width=12, className="mt-3")
@@ -125,22 +114,37 @@ def run_clustering_cb(n_clicks, pca_store, processed_store, algo, k, eps, min_sa
         return no_update, no_update, dbc.Alert("Nenhum dado PCA disponível", color="warning"), no_update, empty_fig
     
     try:
-        # call pipeline function (renamed) with parameters
-        out = pipeline_run_clustering(pca_store, algo=algo, k=k, eps=eps, min_samples=min_samples, n_agg=agg_n)
-        n_clusters = out.get('n_clusters', int(np.max(out['labels']) + 1) if len(out.get('labels', [])) else 0)
-        print(f"[CLUSTER] Clustering done: {n_clusters} clusters")
+        # For heavy algorithms, sample the PCA data to a max of 5000 rows to avoid long runtimes / OOM
+        sampled = False
+        df_for_pipeline = df
+        if algo in ("dbscan", "agglomerative") and len(df) > 5000:
+            sampled = True
+            rng = np.random.RandomState(42)
+            sample_idx = rng.choice(len(df), size=5000, replace=False)
+            df_for_pipeline = df.iloc[sample_idx].reset_index(drop=True)
+            pca_input = df_for_pipeline.to_dict('split')
+        else:
+            pca_input = pca_store
+
+        # call pipeline function with pca_input (may be sampled)
+        out = pipeline_run_clustering(pca_input, algo=algo, k=k, eps=eps, min_samples=min_samples, n_agg=agg_n)
+        labels = out.get('labels', [])
+        model_obj = out.get('model', None)
+        n_clusters = out.get('n_clusters', int(np.max(labels) + 1) if len(labels) else 0)
+        print(f"[CLUSTER] Clustering done: {n_clusters} clusters (sampled={sampled})")
         
-        df_plot = df.copy()
-        df_plot['cluster'] = out['labels']
+        # build plot using the same DataFrame that was clustered
+        df_plot = (df_for_pipeline.copy() if sampled else df.copy())
+        df_plot['cluster'] = labels
         
         fig = px.scatter(df_plot, x=df_plot.columns[0], y=df_plot.columns[1], color='cluster', 
                         title=f'Clusters ({algo.upper()}) - {n_clusters} clusters',
                         template='plotly_dark')
         
-        status = dbc.Alert(f"✓ Clusterização concluída: {n_clusters} clusters encontrados", color="success")
+        status = dbc.Alert(f"✓ Clusterização concluída: {n_clusters} clusters encontrados (sampled={sampled})", color="success")
         warning = no_update
         
-        return out['labels'], out['model'], status, warning, fig
+        return labels, model_obj, status, warning, fig
         
     except Exception as e:
         empty_fig = go.Figure(layout={"title": "Erro na clusterização", "template": "plotly_dark"})
@@ -149,43 +153,6 @@ def run_clustering_cb(n_clicks, pca_store, processed_store, algo, k, eps, min_sa
         import traceback
         traceback.print_exc()
         return no_update, no_update, alert, no_update, empty_fig
-
-# Elbow Method callback (keeps existing logic, now components exist)
-@callback(
-    Output('elbow-plot-div', 'children'),
-    Input('run-elbow-btn', 'n_clicks'),
-    State(STORE_PCA, 'data'),
-    State('elbow-k-range', 'value'),
-    prevent_initial_call=True
-)
-def run_elbow_method(n_clicks, pca_store, k_range):
-    df = to_df(pca_store)
-    if df is None or df.empty:
-        return dbc.Alert("Nenhum dado PCA disponível para Elbow Method", color="warning")
-    
-    try:
-        X = df.values
-        inertias = []
-        k_values = list(range(k_range[0], k_range[1] + 1))
-        
-        from sklearn.cluster import KMeans
-        for k in k_values:
-            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-            kmeans.fit(X)
-            inertias.append(kmeans.inertia_)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=k_values, y=inertias, mode='lines+markers', name='Inércia'))
-        fig.update_layout(
-            title='Método do Cotovelo (Elbow Method)',
-            xaxis_title='Número de clusters (k)',
-            yaxis_title='Inércia (Soma das distâncias quadráticas)',
-            template='plotly_dark'
-        )
-        
-        return dcc.Graph(figure=fig)
-    except Exception as e:
-        return dbc.Alert(f"Erro no Elbow Method: {type(e).__name__}: {e}", color="danger")
 
 # Restaurar callback de avaliação (usando dados consistentes)
 @callback(
@@ -207,36 +174,41 @@ def evaluate_clusters(n_clicks, labels, pca_store, algo):
         if df is None or df.empty:
             return dbc.Alert("Dados PCA não disponíveis para avaliação", color="warning"), go.Figure()
         
-        sample_size = min(3000, len(df))
-        sample_indices = np.random.RandomState(42).choice(len(df), size=sample_size, replace=False)
+        # use up to 5000 samples for evaluation to limit memory/time
+        sample_size = min(5000, len(df))
+        rng = np.random.RandomState(42)
+        sample_indices = rng.choice(len(df), size=sample_size, replace=False)
         df_sample = df.iloc[sample_indices]
-        labels_sample = np.array(labels)[sample_indices]
+        labels_arr = np.array(labels)[sample_indices]
         
         X = df_sample.values
         
         from sklearn.metrics import silhouette_score, davies_bouldin_score
-        sil_avg = silhouette_score(X, labels_sample)
-        db_score = davies_bouldin_score(X, labels_sample)
+        sil_avg = silhouette_score(X, labels_arr)
+        db_score = davies_bouldin_score(X, labels_arr)
         
-        unique, counts = np.unique(labels_sample, return_counts=True)
+        unique, counts = np.unique(labels_arr, return_counts=True)
         cluster_counts = dict(zip(unique, counts))
         
-        eval_text = f"""
-        **Métricas de Avaliação:**
-        - Silhouette médio (global): {sil_avg:.3f}
-        - Davies-Bouldin: {db_score:.3f}
-        - Amostra usada: {sample_size} linhas
-        
-        **Contagem por cluster:**
-        """ + "\n".join([f"- Cluster {k}: {v} pontos" for k, v in cluster_counts.items()])
+        # build a structured evaluation summary (not a single text block)
+        eval_children = [
+            html.H5("Métricas de Avaliação"),
+            html.Ul([
+                html.Li(f"Silhouette médio (global): {sil_avg:.3f}"),
+                html.Li(f"Davies-Bouldin: {db_score:.3f}"),
+                html.Li(f"Amostra usada: {sample_size} linhas"),
+            ]),
+            html.H6("Contagem por cluster"),
+            html.Ul([html.Li(f"Cluster {int(k)}: {int(v)} pontos") for k, v in cluster_counts.items()])
+        ]
         
         from sklearn.metrics import silhouette_samples
-        silhouette_vals = silhouette_samples(X, labels_sample)
+        silhouette_vals = silhouette_samples(X, labels_arr)
         
         fig = go.Figure()
         y_lower = 10
-        for i in np.unique(labels_sample):
-            ith_cluster_silhouette_values = silhouette_vals[labels_sample == i]
+        for i in np.unique(labels_arr):
+            ith_cluster_silhouette_values = silhouette_vals[labels_arr == i]
             ith_cluster_silhouette_values.sort()
             size_cluster_i = ith_cluster_silhouette_values.shape[0]
             y_upper = y_lower + size_cluster_i
@@ -244,7 +216,7 @@ def evaluate_clusters(n_clicks, labels, pca_store, algo):
                 x=ith_cluster_silhouette_values,
                 y=np.arange(y_lower, y_upper),
                 orientation='h',
-                name=f'Cluster {i}',
+                name=f'Cluster {int(i)}',
                 showlegend=False
             ))
             fig.add_vline(x=sil_avg, line_dash="dash", line_color="red")
@@ -257,7 +229,7 @@ def evaluate_clusters(n_clicks, labels, pca_store, algo):
             template='plotly_dark'
         )
         
-        return eval_text, fig
+        return html.Div(eval_children), fig
         
     except Exception as e:
         empty_fig = go.Figure(layout={"title": "Erro na avaliação", "template": "plotly_dark"})

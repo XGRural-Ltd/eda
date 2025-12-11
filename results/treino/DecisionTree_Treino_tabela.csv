@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+DecisionTree;Treino;Precisão;1,000;0,760;1,000;0,747;0,991;0,995;1,000;0,928;1,000;1,000;0,942;0,942
+DecisionTree;Treino;Recall;1,000;0,956;0,938;0,819;0,701;1,000;0,995;1,000;1,000;0,922;0,933;0,933
+DecisionTree;Treino;F1-Score;1,000;0,847;0,968;0,781;0,821;0,998;0,997;0,963;1,000;0,960;0,933;0,933
+DecisionTree;Treino;Suporte;800;800;800;800;800;800;800;800;800;800;8000;8000
+DecisionTree;Treino;Acurácia;-;-;-;-;-;-;-;-;-;-;0,933;-

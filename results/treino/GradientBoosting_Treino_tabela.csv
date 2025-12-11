@@ -1,0 +1,6 @@
+﻿Modelo;Conjunto;Métrica;cantopop;dance;dancehall;edm;electro;forro;gospel;happy;hard-rock;hardstyle;Média;Média Ponderada
+GradientBoosting;Treino;Precisão;0,877;0,642;0,811;0,584;0,704;0,857;0,855;0,875;0,873;0,855;0,793;0,793
+GradientBoosting;Treino;Recall;0,845;0,703;0,825;0,657;0,540;0,939;0,880;0,859;0,818;0,845;0,791;0,791
+GradientBoosting;Treino;F1-Score;0,861;0,671;0,818;0,618;0,611;0,896;0,868;0,867;0,844;0,850;0,790;0,790
+GradientBoosting;Treino;Suporte;800;800;800;800;800;800;800;800;800;800;8000;8000
+GradientBoosting;Treino;Acurácia;-;-;-;-;-;-;-;-;-;-;0,791;-

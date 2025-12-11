@@ -46,7 +46,7 @@ layout = dbc.Container([
     # --- ELBOW: gráfico automático ligado ao pca-df-store ---
     html.Hr(),
     html.Div([
-        html.H5("Elbow Method (Inércia vs k) — automático"),
+        html.H5("Elbow Method (Inércia vs k) "),
         dcc.Graph(id='elbow-plot', config={'displayModeBar': False}),
         html.Label("Valor máximo de k para o Elbow:"),
         dcc.Slider(2, 20, 1, value=6, id='elbow-kmax-slider', marks=None,
@@ -168,34 +168,53 @@ def perform_pca(n_clicks, processed_store, features, n_components):
         if 'pca_store' not in out or not out['pca_store']:
             raise ValueError("run_pca did not return valid pca_store")
             
-        # Build variance explained figure
+        # Build variance explained figure (robust: converte para % se necessário e melhora visibilidade)
         explained_var = out.get('explained_variance', [])
         cumulative_var = out.get('cumulative_variance', [])
-        
+
+        def _to_percent(arr):
+            arr = np.array(arr, dtype=float)
+            if arr.size == 0:
+                return arr
+            if arr.max() <= 1.01:
+                return arr * 100.0
+            return arr
+
+        print(f"[PCA] explained_var (raw): {explained_var[:8]}... total={len(explained_var)}")
+        print(f"[PCA] cumulative_var (raw): {cumulative_var[:8]}... total={len(cumulative_var)}")
+
         if explained_var and cumulative_var:
+            ev = _to_percent(explained_var)
+            cv = _to_percent(cumulative_var)
+            labels = [f'PC{i+1}' for i in range(len(ev))]
+
             fig = go.Figure()
             fig.add_trace(go.Bar(
-                x=[f'PC{i+1}' for i in range(len(explained_var))],
-                y=explained_var,
-                name='Variância explicada',
-                marker_color='lightblue'
+                x=labels,
+                y=ev,
+                name='Variância explicada (%)',
+                marker_color='rgba(100,150,255,0.95)',
+                hovertemplate='%{x}: %{y:.2f}%<extra></extra>'
             ))
             fig.add_trace(go.Scatter(
-                x=[f'PC{i+1}' for i in range(len(cumulative_var))],
-                y=cumulative_var,
-                name='Variância acumulada',
+                x=labels,
+                y=cv,
+                name='Variância acumulada (%)',
                 mode='lines+markers',
-                marker_color='orange',
-                yaxis='y2'
+                line=dict(color='orange', width=3),
+                marker=dict(color='orange', size=7, line=dict(color='rgba(0,0,0,0.6)', width=0.5)),
+                yaxis='y2',
+                hovertemplate='%{x}: %{y:.2f}%<extra></extra>'
             ))
             fig.update_layout(
-                title=f'Variância Explicada - PCA com {len(explained_var)} componentes',
+                title=f'Variância Explicada - PCA com {len(ev)} componentes',
                 template='plotly_dark',
-                yaxis=dict(title='Variância explicada (%)'),
-                yaxis2=dict(title='Acumulada (%)', overlaying='y', side='right'),
-                hovermode='x unified'
+                yaxis=dict(title='Variância explicada (%)', rangemode='tozero'),
+                yaxis2=dict(title='Acumulada (%)', overlaying='y', side='right', rangemode='tozero'),
+                hovermode='x unified',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
             )
-            print(f"[PCA] Created variance figure with {len(explained_var)} components")
+            print(f"[PCA] Created variance figure with {len(ev)} components (converted to % if needed)")
         else:
             fig = go.Figure(layout={"title": "PCA concluído (sem dados de variância)", "template": "plotly_dark"})
             print("[PCA] No variance data available")

@@ -44,19 +44,6 @@ layout = dbc.Container([
 
     dbc.Row([dbc.Col(dcc.Loading(dcc.Graph(id='top4-plot')), width=12)], className="mb-3"),
 
-    # NEW: SHAP option + outputs (sampled, fast)
-    dbc.Row([
-        dbc.Col([
-            dbc.Checklist(options=[{"label": "Gerar SHAP (amostrado, rápido)", "value": "shap"}],
-                          value=[], id='include-shap', inline=True),
-        ], width=6)
-    ], className="mb-2"),
-
-    dbc.Row([
-        dbc.Col(dcc.Loading(dcc.Graph(id='shap-plot')), width=8),
-        dbc.Col(html.Div(id='shap-info'), width=4)
-    ], className="mb-4"),
-
 ], fluid=True)
 
 
@@ -65,16 +52,12 @@ layout = dbc.Container([
     Output('compare-results-table', 'data'),
     Output('compare-results-table', 'columns'),
     Output('top4-plot', 'figure'),
-    Output('shap-plot', 'figure'),
-    Output('shap-info', 'children'),
     Input('run-compare-button', 'n_clicks'),
-    State('include-shap', 'value'),
     State(STORE_PCA, 'data'),
     State(STORE_PROCESSED, 'data'),
-    State(STORE_MAIN, 'data'),
     prevent_initial_call=True
 )
-def run_comparison(n_clicks, include_shap, pca_data, processed_data, main_data):
+def run_comparison(n_clicks, pca_data, processed_data):
     warnings.filterwarnings("ignore")
     empty_fig = go.Figure()
     empty_fig.update_layout(title="Nenhum resultado", template="plotly_dark")
@@ -82,16 +65,16 @@ def run_comparison(n_clicks, include_shap, pca_data, processed_data, main_data):
     empty_data = []
 
     if not (pca_data or processed_data):
-        return dbc.Alert("PCA ou dados processados necessários para executar a comparação.", color="warning"), empty_data, empty_cols, empty_fig, empty_fig, ""
+        return dbc.Alert("PCA ou dados processados necessários para executar a comparação.", color="warning"), empty_data, empty_cols, empty_fig
 
     # Prefer PCA-transformed data
     try:
         dfX = pd.DataFrame(**pca_data) if pca_data else pd.DataFrame(**processed_data).select_dtypes(include=np.number)
     except Exception as e:
-        return dbc.Alert(f"Erro ao processar dados: {str(e)}", color="danger"), empty_data, empty_cols, empty_fig, empty_fig, ""
+        return dbc.Alert(f"Erro ao processar dados: {str(e)}", color="danger"), empty_data, empty_cols, empty_fig
 
     if dfX.empty or dfX.shape[0] < 10:
-        return dbc.Alert("Dados insuficientes para comparação.", color="warning"), empty_data, empty_cols, empty_fig, empty_fig, ""
+        return dbc.Alert("Dados insuficientes para comparação.", color="warning"), empty_data, empty_cols, empty_fig
 
     X_full = dfX.values
     n_total = X_full.shape[0]
@@ -165,7 +148,7 @@ def run_comparison(n_clicks, include_shap, pca_data, processed_data, main_data):
     
     if len(top4_names) == 0:
         return (dbc.Alert("Nenhum algoritmo produziu clusters válidos.", color="warning"), 
-                data, cols, empty_fig, empty_fig, "")
+                data, cols, empty_fig)
 
     # Create subplots with scatter plots (PC_1 vs PC_2) with silhouette scores
     fig_top4 = make_subplots(
@@ -231,152 +214,10 @@ def run_comparison(n_clicks, include_shap, pca_data, processed_data, main_data):
         showlegend=True
     )
 
-    # --- NEW: SHAP (sampled, fast) ---
-    shap_fig = empty_fig
-    shap_info = ""
-    if include_shap and 'shap' in include_shap:
-        # need processed_data and main_data to align features and labels
-        try:
-            processed_df = pd.DataFrame(**processed_data) if processed_data else None
-            main_df = pd.DataFrame(**main_data) if main_data else None
-
-            if processed_df is None or main_df is None:
-                raise ValueError("dados processados ou main ausentes para SHAP")
-
-            # choose numeric features as default
-            features_for_shap = processed_df.select_dtypes(include=np.number).columns.tolist()
-            if not features_for_shap:
-                raise ValueError("nenhuma feature numérica encontrada para SHAP")
-
-            # prepare target: group rare genres (top 10) as in pipeline2.0
-            if 'track_genre' not in main_df.columns:
-                raise ValueError("coluna 'track_genre' não encontrada em main data")
-            df_main_aligned = main_df.loc[processed_df.index]
-            top_n = 10
-            top_genres = df_main_aligned['track_genre'].value_counts().nlargest(top_n).index
-            df_main_aligned['track_genre_grouped'] = df_main_aligned['track_genre'].where(df_main_aligned['track_genre'].isin(top_genres), 'outros')
-
-            mask = df_main_aligned['track_genre_grouped'] != 'outros'
-            X_shap_full = processed_df.loc[mask, features_for_shap].copy()
-            y_shap_full = df_main_aligned.loc[mask, 'track_genre_grouped'].copy()
-
-            if X_shap_full.shape[0] < 20 or len(y_shap_full.unique()) < 2:
-                raise ValueError("dados insuficientes para SHAP sampling")
-
-            # Label encode
-            le_shap = LabelEncoder()
-            y_shap_enc = le_shap.fit_transform(y_shap_full)
-            y_shap_series = pd.Series(y_shap_enc, index=X_shap_full.index)
-
-            # sampling for speed
-            n_explain = min(500, len(X_shap_full))
-            bg_n = min(50, len(X_shap_full))
-            X_background = X_shap_full.sample(n=bg_n, random_state=42)
-            X_explain = X_shap_full.sample(n=n_explain, random_state=42)
-            y_explain = y_shap_series.loc[X_explain.index].values
-
-            # train lightweight RF
-            model_shap = RandomForestClassifier(n_estimators=40, max_depth=8, random_state=42, n_jobs=-1)
-            model_shap.fit(X_shap_full, y_shap_series.values)
-
-            # try SHAP TreeExplainer, fallback to permutation importance
-            try:
-                import shap
-                # Prefer new unified API quando disponível
-                explainer = None
-                try:
-                    if hasattr(shap, "Explainer"):
-                        # usa background pequeno (já definido) para economizar memória
-                        explainer = shap.Explainer(model_shap, X_background, algorithm="tree")
-                except Exception:
-                    explainer = None
-
-                # fallback para TreeExplainer se Explainer não funcionar
-                if explainer is None:
-                    explainer = shap.TreeExplainer(model_shap, data=X_background, feature_perturbation="interventional")
-
-                # extrai os valores SHAP (pode retornar Explanation ou lista/array)
-                if hasattr(explainer, "__call__"):
-                    out = explainer(X_explain)
-                    # Explanation: .values ou .values[..., j]; compatibiliza formatos
-                    shap_values = out.values if hasattr(out, "values") else out
-                else:
-                    shap_values = explainer.shap_values(X_explain)
-
-                # compute mean abs importance robustly (same helper as notebook)
-                def mean_abs_shap(shv):
-                    a = shv
-                    if isinstance(a, list):
-                        arrs = []
-                        for sv in a:
-                            sv = np.asarray(sv)
-                            if sv.ndim == 3:
-                                sv = np.mean(np.abs(sv), axis=2)
-                            arrs.append(np.abs(sv))
-                        stacked = np.stack(arrs, axis=0)
-                        return stacked.mean(axis=(0,1))
-                    else:
-                        sv = np.asarray(a)
-                        if sv.ndim == 3:
-                            if sv.shape[2] == X_explain.shape[1]:
-                                sv = np.mean(np.abs(sv), axis=2)
-                            else:
-                                sv = np.abs(sv)
-                            if sv.ndim == 3:
-                                return sv.mean(axis=(0,1))
-                        if sv.ndim == 2:
-                            return np.mean(np.abs(sv), axis=0)
-                        return np.ravel(np.abs(sv))
-
-                mean_abs = mean_abs_shap(shap_values)
-                shap_importances = pd.Series(mean_abs, index=features_for_shap).sort_values(ascending=False)
-                top10 = shap_importances.head(10).index.tolist()
-
-                # save globally for classification pipeline (mimic notebook behavior)
-                globals()['selected_features'] = top10
-
-                # build a horizontal bar plot (plotly)
-                top_plot = shap_importances.head(12)
-                shap_fig = go.Figure(go.Bar(
-                    x=top_plot.values[::-1],
-                    y=top_plot.index[::-1],
-                    orientation='h',
-                    marker=dict(color='rgba(46,137,205,0.8)')
-                ))
-                shap_fig.update_layout(title="SHAP mean(|value|) - top features (sampled)", template="plotly_dark", height=450)
-                shap_info = dbc.Card(dbc.CardBody([
-                    html.P(f"Top 10 features salvas para classificação:"),
-                    html.Ul([html.Li(f) for f in top10])
-                ]))
-            except Exception as e_shap:
-                # fallback permutation importance (faster / safer)
-                perm = permutation_importance(model_shap, X_shap_full, y_shap_series.values, n_repeats=8, random_state=42, n_jobs=-1, scoring='f1_macro')
-                shap_importances = pd.Series(perm.importances_mean, index=features_for_shap).sort_values(ascending=False)
-                top10 = shap_importances.head(10).index.tolist()
-                globals()['selected_features'] = top10
-
-                top_plot = shap_importances.head(12)
-                shap_fig = go.Figure(go.Bar(
-                    x=top_plot.values[::-1],
-                    y=top_plot.index[::-1],
-                    orientation='h',
-                    marker=dict(color='rgba(204,121,167,0.8)')
-                ))
-                shap_fig.update_layout(title="Permutation importance (fallback) - top features", template="plotly_dark", height=450)
-                shap_info = dbc.Card(dbc.CardBody([
-                    html.P("SHAP TreeExplainer não disponível/erro — usado permutation importance como fallback."),
-                    html.P(f"Top 10 features salvas para classificação:"),
-                    html.Ul([html.Li(f) for f in top10])
-                ]))
-
-        except Exception as e_outer:
-            shap_fig = empty_fig
-            shap_info = dbc.Alert(f"SHAP não gerado: {type(e_outer).__name__} - {str(e_outer)}", color="warning")
-
     status = dbc.Alert(f"✓ Comparação finalizada ({len(algorithms)} algoritmos testados).", 
                        color="success", duration=4000)
     
-    return status, data, cols, fig_top4, shap_fig, shap_info
+    return status, data, cols, fig_top4
 
 
 def _shap_worker(processed_dict, main_dict, out_path):

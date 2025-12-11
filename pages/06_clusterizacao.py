@@ -5,9 +5,9 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from src.constants import STORE_PROCESSED, STORE_PCA, STORE_SAMPLED_PCA, STORE_CLUSTER_LABELS, STORE_PREDICTION_MODEL
+from src.constants import STORE_PROCESSED, STORE_PCA, STORE_SAMPLED_PCA, STORE_CLUSTER_LABELS, STORE_CLUSTER_MODEL
 from src.utils import to_df
-from src.pipeline import run_clustering
+from src.pipeline import run_clustering as pipeline_run_clustering  # renamed to avoid shadowing
 
 dash.register_page(__name__, path='/clusterizacao', name='Clusterização', order=6)
 
@@ -33,15 +33,13 @@ layout = html.Div([
         ], width=12)
     ], className="my-4"),
 
-    # --- Container for all possible algorithm controls ---
+    # algorithm-specific controls
     html.Div([
-        # K-Means Controls (initially visible)
         html.Div([
             html.Label("Número de clusters (k):"),
             dcc.Slider(2, 20, 1, value=4, id='kmeans-k-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
         ], id='kmeans-controls-div', style={'display': 'block'}),
 
-        # DBSCAN Controls (initially hidden)
         html.Div([
             html.Label("Epsilon (eps - raio da vizinhança):"),
             dcc.Slider(0.1, 5.0, 0.1, value=1.5, id='dbscan-eps-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True}),
@@ -49,7 +47,6 @@ layout = html.Div([
             dcc.Slider(1, 50, 1, value=10, id='dbscan-minsamples-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
         ], id='dbscan-controls-div', style={'display': 'none'}),
 
-        # Agglomerative Clustering Controls (initially hidden)
         html.Div([
             html.Label("Número de clusters:"),
             dcc.Slider(2, 20, 1, value=8, id='agg-n-slider', marks=None, tooltip={"placement": "bottom", "always_visible": True})
@@ -59,7 +56,7 @@ layout = html.Div([
     dbc.Row([
         dbc.Col([
             html.Hr(),
-            dbc.Button("Executar Clusterização", id='run-cluster-button', color="primary", n_clicks=0),
+            dbc.Button("Executar Clusterização", id='run-cluster-button', color="primary", n_clicks=0),  # id matches callback now
             html.Div(id='cluster-status-div', className="mt-3")
         ], width=12, className="mt-4 text-center")
     ],),
@@ -67,7 +64,18 @@ layout = html.Div([
     # novo: gráfico de clusters (PC_1 x PC_2)
     dbc.Row([
         dbc.Col(dbc.Spinner(dcc.Graph(id='cluster-plot', figure=px.scatter(title="Clusters (PC_1 x PC_2)"))), width=12)
-    ],),
+    ]),
+
+    # Elbow method controls (minimal UI so callbacks find components)
+    dbc.Row([
+        dbc.Col([
+            html.Hr(),
+            html.Label("Elbow Method (k-range)"),
+            dcc.RangeSlider(id='elbow-k-range', min=2, max=20, step=1, value=[2, 10], marks=None),
+            dbc.Button("Executar Elbow Method", id='run-elbow-btn', color="secondary", n_clicks=0, className="mt-2"),
+            html.Div(id='elbow-plot-div', className="mt-3")
+        ], width=12)
+    ]),
 
     # Avaliação (mesma página) - botão para disparar avaliação leve (com amostragem)
     dbc.Row([
@@ -81,7 +89,6 @@ layout = html.Div([
 
 # --- Callbacks ---
 
-# Callback to dynamically generate controls based on algorithm choice
 @callback(
     Output('kmeans-controls-div', 'style'),
     Output('dbscan-controls-div', 'style'),
@@ -94,15 +101,16 @@ def render_cluster_controls(algo_choice):
     agg_style = {'display': 'block'} if algo_choice == "agglomerative" else {'display': 'none'}
     return kmeans_style, dbscan_style, agg_style
 
-# Callback to run the clustering algorithm
+# Callback to run the clustering algorithm (renamed to avoid collision)
 @callback(
     Output(STORE_CLUSTER_LABELS, 'data'),
-    Output(STORE_PREDICTION_MODEL, 'data'),
+    Output(STORE_CLUSTER_MODEL, 'data'),
     Output('cluster-status-div', 'children'),
     Output('cluster-warning-div', 'children'),
     Output('cluster-plot', 'figure'),
     Input('run-cluster-button', 'n_clicks'),
-    State('pca-df-store', 'data'),
+    State(STORE_PCA, 'data'),
+    State(STORE_PROCESSED, 'data'),
     State('cluster-algo-dropdown', 'value'),
     State('kmeans-k-slider', 'value'),
     State('dbscan-eps-slider', 'value'),
@@ -110,32 +118,26 @@ def render_cluster_controls(algo_choice):
     State('agg-n-slider', 'value'),
     prevent_initial_call=True
 )
-def run_clustering_cb(n_clicks, pca_store, algo, k, eps, min_samples, agg_n):
+def run_clustering_cb(n_clicks, pca_store, processed_store, algo, k, eps, min_samples, agg_n):
     df = to_df(pca_store)
     if df is None or df.empty:
         empty_fig = go.Figure(layout={"title": "Nenhum dado PCA disponível", "template": "plotly_dark"})
         return no_update, no_update, dbc.Alert("Nenhum dado PCA disponível", color="warning"), no_update, empty_fig
     
     try:
-        print(f"[CLUSTER] Running {algo} with params: k={k}, eps={eps}, min_samples={min_samples}, agg_n={agg_n}")
-        out = run_clustering(pca_store, algo=algo, k=k, eps=eps, min_samples=min_samples, n_agg=agg_n)  # CORREÇÃO: agg_n -> n_agg
-        print(f"[CLUSTER] Clustering done: {out['n_clusters']} clusters")
+        # call pipeline function (renamed) with parameters
+        out = pipeline_run_clustering(pca_store, algo=algo, k=k, eps=eps, min_samples=min_samples, n_agg=agg_n)
+        n_clusters = out.get('n_clusters', int(np.max(out['labels']) + 1) if len(out.get('labels', [])) else 0)
+        print(f"[CLUSTER] Clustering done: {n_clusters} clusters")
         
-        # Build plot
         df_plot = df.copy()
         df_plot['cluster'] = out['labels']
         
-        if algo == 'dbscan':
-            # DBSCAN pode ter -1 (noise)
-            fig = px.scatter(df_plot, x=df_plot.columns[0], y=df_plot.columns[1], color='cluster', 
-                           title=f'Clusters ({algo.upper()}) - {out["n_clusters"]} clusters',
-                           template='plotly_dark')
-        else:
-            fig = px.scatter(df_plot, x=df_plot.columns[0], y=df_plot.columns[1], color='cluster', 
-                           title=f'Clusters ({algo.upper()}) - {out["n_clusters"]} clusters',
-                           template='plotly_dark')
+        fig = px.scatter(df_plot, x=df_plot.columns[0], y=df_plot.columns[1], color='cluster', 
+                        title=f'Clusters ({algo.upper()}) - {n_clusters} clusters',
+                        template='plotly_dark')
         
-        status = dbc.Alert(f"✓ Clusterização concluída: {out['n_clusters']} clusters encontrados", color="success")
+        status = dbc.Alert(f"✓ Clusterização concluída: {n_clusters} clusters encontrados", color="success")
         warning = no_update
         
         return out['labels'], out['model'], status, warning, fig
@@ -148,11 +150,11 @@ def run_clustering_cb(n_clicks, pca_store, algo, k, eps, min_samples, agg_n):
         traceback.print_exc()
         return no_update, no_update, alert, no_update, empty_fig
 
-# Novo callback para Elbow Method
+# Elbow Method callback (keeps existing logic, now components exist)
 @callback(
     Output('elbow-plot-div', 'children'),
     Input('run-elbow-btn', 'n_clicks'),
-    State('pca-df-store', 'data'),
+    State(STORE_PCA, 'data'),
     State('elbow-k-range', 'value'),
     prevent_initial_call=True
 )
@@ -205,7 +207,6 @@ def evaluate_clusters(n_clicks, labels, pca_store, algo):
         if df is None or df.empty:
             return dbc.Alert("Dados PCA não disponíveis para avaliação", color="warning"), go.Figure()
         
-        # CORREÇÃO: Amostragem consistente para manter correspondência entre df e labels
         sample_size = min(3000, len(df))
         sample_indices = np.random.RandomState(42).choice(len(df), size=sample_size, replace=False)
         df_sample = df.iloc[sample_indices]
@@ -213,16 +214,13 @@ def evaluate_clusters(n_clicks, labels, pca_store, algo):
         
         X = df_sample.values
         
-        # Calcular métricas
         from sklearn.metrics import silhouette_score, davies_bouldin_score
         sil_avg = silhouette_score(X, labels_sample)
         db_score = davies_bouldin_score(X, labels_sample)
         
-        # Contagem por cluster
         unique, counts = np.unique(labels_sample, return_counts=True)
         cluster_counts = dict(zip(unique, counts))
         
-        # Texto de resultados
         eval_text = f"""
         **Métricas de Avaliação:**
         - Silhouette médio (global): {sil_avg:.3f}
@@ -232,7 +230,6 @@ def evaluate_clusters(n_clicks, labels, pca_store, algo):
         **Contagem por cluster:**
         """ + "\n".join([f"- Cluster {k}: {v} pontos" for k, v in cluster_counts.items()])
         
-        # Plot: Silhouette por cluster (igual ao notebook)
         from sklearn.metrics import silhouette_samples
         silhouette_vals = silhouette_samples(X, labels_sample)
         

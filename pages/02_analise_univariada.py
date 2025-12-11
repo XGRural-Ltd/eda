@@ -2,6 +2,31 @@ import dash
 from dash import html, dcc, callback, Input, Output
 from src.constants import STORE_MAIN
 from src.utils import to_df
+
+@callback(
+    Output('univar-genre-multiselect', 'options'),
+    Output('univar-col-select', 'options'),
+    Input(STORE_MAIN, 'data'),
+    prevent_initial_call=False
+)
+def update_univar_options(main_store):
+    # reconstrói DF a partir do-store (compatível com seus utilitários)
+    df = to_df(main_store)
+    if df is None or df.empty:
+        return [], []
+
+    # lista de gêneros (se existir coluna)
+    genres = []
+    if 'track_genre' in df.columns:
+        genres = sorted(df['track_genre'].dropna().unique().tolist())
+    options_genres = [{'label': g, 'value': g} for g in genres]
+
+    # colunas numéricas para seleção
+    num_cols = df.select_dtypes(include=['number']).columns.tolist()
+    options_cols = [{'label': c, 'value': c} for c in num_cols]
+
+    return options_genres, options_cols
+
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -85,29 +110,6 @@ layout = dbc.Container([
 ], fluid=True)
 
 # --- Callbacks ---
-@callback(
-    Output('univar-genre-multiselect', 'options'),
-    Output('univar-col-select', 'options'),
-    Input(STORE_MAIN, 'data')
-)
-def populate_univar_dropdowns(main_store):
-    df = to_df(main_store)
-    if df is None:
-        return [], [], []
-
-    # Gêneros com label capitalizado (comportamento próximo do Home.py)
-    if 'track_genre' in df.columns:
-        genres_raw = sorted(df['track_genre'].dropna().unique().tolist())
-        genre_options = [{"label": g.capitalize(), "value": g} for g in genres_raw]
-    else:
-        genre_options = []
-
-    # Variáveis numéricas com rótulos amigáveis
-    num_cols = sorted(df.select_dtypes(include=np.number).columns.tolist())
-    num_options = [{"label": cols_dict.get(c, c), "value": c} for c in num_cols]
-
-    return genre_options, num_options
-
 @callback(
     Output('univar-hist-chart', 'figure'),
     Output('univar-box-chart', 'figure'),

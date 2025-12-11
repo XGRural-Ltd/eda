@@ -1,11 +1,14 @@
 import os
-import pandas as pd
-import kagglehub
-import dash
-import threading
-from dash import dcc, html, Dash, Input, Output, State, ALL
-import plotly.io as pio
+import sys
+import pkgutil
+import importlib
+
+from dash import Dash, dcc, html
+import dash as dash
 import dash_bootstrap_components as dbc
+import plotly.io as pio
+import pandas as pd
+
 from src.constants import (
     STORE_MAIN,
     STORE_PROCESSED,
@@ -16,43 +19,62 @@ from src.constants import (
     STORE_PCA_MODEL,
     STORE_SCALER,
     STORE_PCA_FEATURES,
+    STORE_CLUSTER_MODEL,   # <--- added
 )
 
+# Restaurar tema escuro (visual anterior)
 pio.templates.default = "plotly_dark"
+BOOTSTRAP_THEME = dbc.themes.CYBORG  # tema escuro do Bootstrap
 
-app = Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.CYBORG], suppress_callback_exceptions=True)
+# 1) Criar app ANTES de importar/registrar páginas
+app = Dash(__name__, use_pages=True, external_stylesheets=[BOOTSTRAP_THEME])
+server = app.server
 
-# --- Sidebar automático (gera links a partir de dash.page_registry) ---
+# 2) Importar todas as pages somente após a criação do app
+pages_dir = os.path.join(os.path.dirname(__file__), "pages")
+if os.path.isdir(pages_dir):
+    sys.path.insert(0, os.path.dirname(__file__))
+    for finder, name, ispkg in pkgutil.iter_modules([pages_dir]):
+        importlib.import_module(f"pages.{name}")
+
+# Pequena função para montar a sidebar a partir de dash.page_registry
 def _build_sidebar():
+    from dash import page_registry
     links = []
-    for p in dash.page_registry.values():
-        # ignora páginas marcadas como `path=None` (não registradas)
-        if not p.get("path"):
+    for p in page_registry.values():
+        path = p.get("path")
+        if not path:
             continue
-        links.append(
-            dbc.NavLink(p.get("name", p["module"]), href=p["path"], active="exact", className="mb-1")
-        )
+        links.append(dbc.NavLink(p.get("name", p["module"]), href=path, active="exact", className="mb-1"))
     nav = dbc.Nav(links, vertical=True, pills=True, className="flex-column")
-    card = dbc.Card(dbc.CardBody([html.H5("Navegação"), nav]), className="h-100")
-    return card
+    return dbc.Card(dbc.CardBody([html.H5("Navegação"), nav]), color="dark", inverse=True)
 
-# --- TRY TO LOAD DATA ON STARTUP (serialized for dcc.Store initial value) ---
+# Tenta carregar dataset inicial (opcional)
 def _load_initial_dataset():
-    """Return DataFrame serialized as orient='split' or None. Tries local CSVs then kagglehub."""
     candidates = [
         os.path.join(os.getcwd(), "data", "dataset.csv"),
+        os.path.join(os.getcwd(), "data", "dataset.parquet"),
+        os.path.join(os.getcwd(), "data", "spotify_dataset.csv"),
         os.path.join(os.getcwd(), "dataset.csv"),
+        os.path.join(os.getcwd(), "spotify_dataset.csv"),
+        os.path.join(os.getcwd(), "dataset.parquet"),
     ]
     for p in candidates:
         if os.path.exists(p):
             try:
-                df = pd.read_csv(p, index_col=0)
+                if p.endswith(".parquet"):
+                    df = pd.read_parquet(p)
+                else:
+                    df = pd.read_csv(p, index_col=0)
                 print(f"Loaded dataset from {p} (shape: {df.shape})")
                 return df.to_dict(orient="split")
             except Exception as e:
                 print(f"Failed to read {p}: {e}")
-    # fallback: kagglehub
+
+    # tentativa via kagglehub (opcional)
     try:
+        import kagglehub
+        print("Nenhum arquivo local — tentando baixar via kagglehub...")
         path = kagglehub.dataset_download("maharshipandya/-spotify-tracks-dataset")
         csv_path = os.path.join(path, "dataset.csv")
         if os.path.exists(csv_path):
@@ -60,39 +82,35 @@ def _load_initial_dataset():
             print(f"Loaded dataset via kagglehub (shape: {df.shape})")
             return df.to_dict(orient="split")
     except Exception as e:
-        print("kagglehub load failed:", e)
-    print("No initial dataset available; main store will start empty.")
-    return None
+        print("kagglehub download failed or not configured:", e)
 
-# call once at startup
+    # fallback: placeholder vazio (ou gerar sintético se preferir)
+    print("No initial dataset found in candidate locations. Using empty dataset placeholder.")
+    return {"index": [], "columns": [], "data": []}
+
 _INITIAL_MAIN_STORE = _load_initial_dataset()
 
-# --- CRITICAL: ALL stores MUST be in app.layout root (shared across all pages) ---
+# Layout: stores devem existir no root para serem compartilhados entre páginas
 app.layout = dbc.Container([
-    # === GLOBAL STORES (shared by all pages) - MUST be before page_container ---
-    dcc.Store(id="main-df-store", data=_INITIAL_MAIN_STORE, storage_type='memory'),
-    dcc.Store(id="processed-df-store", storage_type='memory'),
-    dcc.Store(id="pca-df-store", storage_type='memory'),
-    dcc.Store(id="sampled-pca-df-store", storage_type='memory'),
-    dcc.Store(id="cluster-labels-store", storage_type='memory'),
-    dcc.Store(id="prediction-model-store", storage_type='memory'),
-    dcc.Store(id="pca-model-store", storage_type='memory'),
-    dcc.Store(id="scaler-store", storage_type='memory'),
-    dcc.Store(id="pca-features-store", storage_type='memory'),
+    dcc.Store(id=STORE_MAIN, data=_INITIAL_MAIN_STORE, storage_type='memory'),
+    dcc.Store(id=STORE_PROCESSED, storage_type='memory'),
+    dcc.Store(id=STORE_PCA, storage_type='memory'),
+    dcc.Store(id=STORE_SAMPLED_PCA, storage_type='memory'),
+    dcc.Store(id=STORE_CLUSTER_LABELS, storage_type='memory'),
+    dcc.Store(id=STORE_PREDICTION_MODEL, storage_type='memory'),
+    dcc.Store(id=STORE_CLUSTER_MODEL, storage_type='memory'),  # <--- new store for cluster models
+    dcc.Store(id=STORE_PCA_MODEL, storage_type='memory'),
+    dcc.Store(id=STORE_SCALER, storage_type='memory'),
+    dcc.Store(id=STORE_PCA_FEATURES, storage_type='memory'),
 
     dcc.Location(id='url', refresh=False),
-    
+
     dbc.Row([
-        dbc.Col(_build_sidebar(), width=2, style={"height": "100vh", "overflow-y": "auto"}),
-        dbc.Col(dash.page_container, width=10, style={"height": "100vh", "overflow-y": "auto"})
+        dbc.Col(_build_sidebar(), width=2, style={"height": "100vh", "overflowY": "auto", "backgroundColor": "#222"}),
+        dbc.Col(html.Div(id="page-content", children=[dash.page_container]), width=10, style={"height": "100vh", "overflowY": "auto"})
     ], className="g-0", style={"height": "100vh"}),
 ], fluid=True, style={"height": "100vh", "overflow": "hidden"})
 
-# --- REMOVE THIS (causes Stores to be hidden) ---
-# def print_callbacks_for_ids(target_ids):
-#     ...
-
 if __name__ == "__main__":
-    # Production/dev on Windows: disable reloader and debug threads to avoid WinError 10038
-    # Use threaded=False and use_reloader=False to prevent werkzeug reloader conflicts
-    app.run(debug=False, port=8050, use_reloader=False, threaded=False)
+    # production / stable dev run: desativa o reloader para evitar reinícios ao criar arquivos em tempo de execução
+    app.run(debug=False, port=8050, use_reloader=False)

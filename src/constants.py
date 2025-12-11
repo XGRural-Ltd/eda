@@ -5,6 +5,7 @@ STORE_PCA = "pca-df-store"
 STORE_SAMPLED_PCA = "sampled-pca-df-store"
 STORE_CLUSTER_LABELS = "cluster-labels-store"
 STORE_PREDICTION_MODEL = "prediction-model-store"
+STORE_CLUSTER_MODEL = "cluster-model-store"
 
 # Additional stores for models / scalers / PCA metadata
 STORE_PCA_MODEL = "pca-model-store"
